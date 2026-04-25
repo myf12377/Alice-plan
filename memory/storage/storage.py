@@ -1,5 +1,16 @@
 """
-存储模块 - L1/L2/L3记忆存储。
+存储模块 — L1/L2/L3 三层记忆的 JSON 文件持久化。
+
+L1: 原始对话，按 user_id 存储，保留 N 天。
+L2: 每日摘要 / 周摘要，Path A（周摘要）和 Path B（日摘要）逻辑分离。
+L3: 重要记忆元数据，按 user_id 存储。
+
+文件结构:
+    {data_dir}/
+      l1/{user_id}.json       # list[L1MemoryItem]
+      l2/{user_id}.json       # list[L2SummaryItem]
+      l3/{user_id}.json       # list[L3MemoryItem]
+      weekly/{user_id}.json   # dict: {user_id, summary, week_start, updated_at}
 """
 
 from __future__ import annotations
@@ -7,27 +18,27 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
-    from memory.settings import MemorySettings
+    from memory.plugin_config import PluginConfig
 
 
 @dataclass
 class L1MemoryItem:
-    """L1记忆项 - 原始对话。
+    """L1 记忆项 — 原始对话。
 
-    属性:
+    Attributes:
         message_id: 消息唯一标识符。
         user_id: 用户标识符。
-        role: 角色（user/assistant）。
+        role: 角色（user / assistant）。
         content: 对话内容。
-        timestamp: 时间戳。
-        compressed: 是否已被压缩为L2摘要。
-        content_type: 内容类型（text/image/audio）。
-        media_url: 原始媒体URL。
+        timestamp: Unix 时间戳。
+        compressed: 是否已被压缩为 L2 摘要。
+        content_type: 内容类型（text / image / audio）。
+        media_url: 原始媒体 URL。
     """
 
     message_id: str
@@ -40,7 +51,6 @@ class L1MemoryItem:
     media_url: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        """转换为字典。"""
         return {
             "message_id": self.message_id,
             "user_id": self.user_id,
@@ -54,7 +64,6 @@ class L1MemoryItem:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> L1MemoryItem:
-        """从字典创建。"""
         return cls(
             message_id=data["message_id"],
             user_id=data["user_id"],
@@ -69,15 +78,15 @@ class L1MemoryItem:
 
 @dataclass
 class L2SummaryItem:
-    """L2记忆项 - 每日摘要。
+    """L2 记忆项 — 每日摘要（Path B）。
 
-    属性:
+    Attributes:
         summary_id: 摘要唯一标识符。
         user_id: 用户标识符。
-        date: 日期字符串 (YYYY-MM-DD)。
+        date: 日期字符串（YYYY-MM-DD）。
         summary: 摘要内容。
-        importance: 重要性分数 (0-10)。
-        timestamp: 时间戳。
+        importance: 重要性分数（0-10）。
+        timestamp: Unix 时间戳。
         hidden: 是否隐藏（不注入前端对话）。
     """
 
@@ -90,7 +99,6 @@ class L2SummaryItem:
     hidden: bool = False
 
     def to_dict(self) -> dict[str, Any]:
-        """转换为字典。"""
         return {
             "summary_id": self.summary_id,
             "user_id": self.user_id,
@@ -103,7 +111,6 @@ class L2SummaryItem:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> L2SummaryItem:
-        """从字典创建。"""
         return cls(
             summary_id=data["summary_id"],
             user_id=data["user_id"],
@@ -117,14 +124,14 @@ class L2SummaryItem:
 
 @dataclass
 class L3MemoryItem:
-    """L3记忆项 - 重要记忆向量。
+    """L3 记忆项 — 重要记忆元数据。
 
-    属性:
+    Attributes:
         memory_id: 记忆唯一标识符。
         user_id: 用户标识符。
         content: 记忆内容。
-        metadata: 元数据。
-        timestamp: 时间戳。
+        metadata: 附加元数据。
+        timestamp: Unix 时间戳。
     """
 
     memory_id: str
@@ -134,7 +141,6 @@ class L3MemoryItem:
     timestamp: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
-        """转换为字典。"""
         return {
             "memory_id": self.memory_id,
             "user_id": self.user_id,
@@ -145,7 +151,6 @@ class L3MemoryItem:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> L3MemoryItem:
-        """从字典创建。"""
         return cls(
             memory_id=data["memory_id"],
             user_id=data["user_id"],
@@ -158,51 +163,45 @@ class L3MemoryItem:
 class MemoryStorage:
     """三层记忆存储。
 
-    使用JSON文件持久化存储L1/L2/L3记忆。
-
-    属性:
-        data_dir: 数据存储根目录。
-        settings: 记忆配置。
+    使用 JSON 文件持久化 L1 / L2 / L3 记忆，全部按 user_id 隔离。
     """
 
-    def __init__(
-        self,
-        data_dir: Path,
-        settings: MemorySettings,
-    ) -> None:
+    def __init__(self, config: PluginConfig) -> None:
         """初始化存储。
 
         Args:
-            data_dir: 数据存储根目录。
-            settings: 记忆配置。
+            config: 插件配置（PluginConfig）。
         """
-        self._data_dir = data_dir
-        self._settings = settings
+        self._config = config
+        data_dir = config.data_dir
         self._l1_dir = data_dir / "l1"
         self._l2_dir = data_dir / "l2"
         self._l3_dir = data_dir / "l3"
+        self._weekly_dir = data_dir / "weekly"
         self._ensure_dirs()
 
     def _ensure_dirs(self) -> None:
-        """确保目录存在。"""
-        self._l1_dir.mkdir(parents=True, exist_ok=True)
-        self._l2_dir.mkdir(parents=True, exist_ok=True)
-        self._l3_dir.mkdir(parents=True, exist_ok=True)
+        for d in (self._l1_dir, self._l2_dir, self._l3_dir, self._weekly_dir):
+            d.mkdir(parents=True, exist_ok=True)
+
+    # ------------------------------------------------------------------
+    # 文件操作工具
+    # ------------------------------------------------------------------
 
     def _get_l1_path(self, user_id: str) -> Path:
-        """获取用户L1存储路径。"""
         return self._l1_dir / f"{user_id}.json"
 
-    def _get_l2_path(self, date: str) -> Path:
-        """获取指定日期的L2存储路径。"""
-        return self._l2_dir / f"{date}.json"
+    def _get_l2_path(self, user_id: str) -> Path:
+        return self._l2_dir / f"{user_id}.json"
 
     def _get_l3_path(self, user_id: str) -> Path:
-        """获取用户L3存储路径。"""
         return self._l3_dir / f"{user_id}.json"
 
-    def _load_json(self, path: Path) -> list[dict[str, Any]]:
-        """加载JSON文件。"""
+    def _get_weekly_path(self, user_id: str) -> Path:
+        return self._weekly_dir / f"{user_id}.json"
+
+    @staticmethod
+    def _load_json(path: Path) -> list[dict[str, Any]]:
         if not path.exists():
             return []
         try:
@@ -211,35 +210,38 @@ class MemoryStorage:
         except (json.JSONDecodeError, IOError):
             return []
 
-    def _save_json(self, path: Path, data: list[dict[str, Any]]) -> None:
-        """保存JSON文件。"""
+    @staticmethod
+    def _save_json(path: Path, data: list[dict[str, Any]]) -> None:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-    # L1对话操作
+    @staticmethod
+    def _now_ts() -> float:
+        return datetime.now(timezone.utc).timestamp()
+
+    # ==================================================================
+    # L1 — 原始对话
+    # ==================================================================
 
     def append_dialogue(
-        self,
-        user_id: str,
-        role: str,
-        content: str,
+        self, user_id: str, role: str, content: str,
     ) -> L1MemoryItem:
-        """添加对话到L1存储。
+        """添加一条对话到 L1。
 
         Args:
             user_id: 用户标识符。
-            role: 角色（user/assistant）。
+            role: 角色（"user" 或 "assistant"）。
             content: 对话内容。
 
         Returns:
-            创建的L1记忆项。
+            创建的 L1MemoryItem。
         """
         item = L1MemoryItem(
             message_id=str(uuid.uuid4()),
             user_id=user_id,
             role=role,
             content=content,
-            timestamp=datetime.now(timezone.utc).timestamp(),
+            timestamp=self._now_ts(),
         )
         path = self._get_l1_path(user_id)
         data = self._load_json(path)
@@ -247,29 +249,33 @@ class MemoryStorage:
         self._save_json(path, data)
         return item
 
-    def get_l1_dialogues(self, user_id: str) -> list[L1MemoryItem]:
-        """获取用户所有L1对话。
+    def get_l1_dialogues(
+        self, user_id: str, date: str | None = None,
+    ) -> list[L1MemoryItem]:
+        """获取用户 L1 对话。
 
         Args:
             user_id: 用户标识符。
+            date: 可选日期（YYYY-MM-DD），为 None 返回全部。
 
         Returns:
-            L1记忆项列表。
+            L1MemoryItem 列表。
         """
-        path = self._get_l1_path(user_id)
-        data = self._load_json(path)
-        return [L1MemoryItem.from_dict(d) for d in data]
+        items = self._load_all_l1(user_id)
+        if date:
+            items = [
+                i for i in items
+                if _ts_to_date(i.timestamp) == date
+            ]
+        return items
+
+    def get_today_dialogues(self, user_id: str) -> list[L1MemoryItem]:
+        """获取用户当日 L1 对话。"""
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        return self.get_l1_dialogues(user_id, date=today)
 
     def delete_l1_dialogue(self, user_id: str, message_id: str) -> bool:
-        """删除L1对话。
-
-        Args:
-            user_id: 用户标识符。
-            message_id: 消息ID。
-
-        Returns:
-            是否删除成功。
-        """
+        """按 message_id 删除单条 L1 对话。"""
         path = self._get_l1_path(user_id)
         data = self._load_json(path)
         original_len = len(data)
@@ -279,125 +285,209 @@ class MemoryStorage:
             return True
         return False
 
-    def update_l1_dialogue_timestamp(
-        self,
-        user_id: str,
-        message_id: str,
-        timestamp: float,
-    ) -> bool:
-        """更新L1对话时间戳。
+    def delete_old_l1_dialogues(
+        self, user_id: str, retention_days: int | None = None,
+    ) -> int:
+        """删除超过保留天数的 L1 对话。
 
         Args:
             user_id: 用户标识符。
-            message_id: 消息ID。
-            timestamp: 新时间戳。
+            retention_days: 保留天数，为 None 使用 config.l1_retention_days。
 
         Returns:
-            是否更新成功。
+            删除的条目数。
+        """
+        if retention_days is None:
+            retention_days = self._config.l1_retention_days
+        cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+        cutoff_ts = cutoff.timestamp()
+        path = self._get_l1_path(user_id)
+        data = self._load_json(path)
+        original_len = len(data)
+        data = [d for d in data if d.get("timestamp", 0) >= cutoff_ts]
+        removed = original_len - len(data)
+        if removed > 0:
+            self._save_json(path, data)
+        return removed
+
+    def mark_dialogues_compressed(
+        self, user_id: str, before_ts: float,
+    ) -> int:
+        """将指定时间之前的对话标记为已压缩。
+
+        Returns:
+            标记的条目数。
         """
         path = self._get_l1_path(user_id)
         data = self._load_json(path)
-        for item in data:
-            if item.get("message_id") == message_id:
-                item["timestamp"] = timestamp
-                self._save_json(path, data)
-                return True
-        return False
+        count = 0
+        for d in data:
+            if d.get("timestamp", 0) < before_ts and not d.get("compressed", False):
+                d["compressed"] = True
+                count += 1
+        if count > 0:
+            self._save_json(path, data)
+        return count
 
-    # L2摘要操作
+    def _load_all_l1(self, user_id: str) -> list[L1MemoryItem]:
+        path = self._get_l1_path(user_id)
+        return [L1MemoryItem.from_dict(d) for d in self._load_json(path)]
+
+    # ==================================================================
+    # L2 Path B — 每日磁盘摘要
+    # ==================================================================
 
     def add_summary(
-        self,
-        date: str,
-        summary: str,
-        importance: int,
-        hidden: bool = False,
+        self, user_id: str, date: str, summary: str,
+        importance: int, hidden: bool = False,
     ) -> L2SummaryItem:
-        """添加L2摘要（覆盖式写入）。
-
-        每次压缩生成当日最新摘要，覆盖写入同一日期文件。
-
-        Args:
-            date: 日期字符串 (YYYY-MM-DD)。
-            summary: 摘要内容。
-            importance: 重要性分数。
-            hidden: 是否隐藏。
-
-        Returns:
-            创建的L2记忆项。
-        """
-        item = L2SummaryItem(
-            summary_id=str(uuid.uuid4()),
-            user_id="",  # L2按日期存储，不再需要user_id
-            date=date,
-            summary=summary,
-            importance=importance,
-            timestamp=datetime.now(timezone.utc).timestamp(),
-            hidden=hidden,
-        )
-        # 覆盖写入：每次压缩生成当日最新摘要
-        path = self._get_l2_path(date)
-        self._save_json(path, [item.to_dict()])
-        return item
-
-    def get_l2_summaries(self, date: str | None = None) -> list[L2SummaryItem]:
-        """获取L2摘要。
-
-        Args:
-            date: 可选日期字符串 (YYYY-MM-DD)。如果为None，返回所有摘要。
-
-        Returns:
-            L2记忆项列表。
-        """
-        if date:
-            # 返回指定日期的摘要
-            path = self._get_l2_path(date)
-            data = self._load_json(path)
-            return [L2SummaryItem.from_dict(d) for d in data]
-        else:
-            # 返回所有日期的摘要（遍历l2目录）
-            results = []
-            for f in self._l2_dir.glob("*.json"):
-                data = self._load_json(f)
-                results.extend([L2SummaryItem.from_dict(d) for d in data])
-            return results
-
-    def delete_l2_summary(self, summary_id: str, date: str) -> bool:
-        """删除L2摘要。
-
-        Args:
-            summary_id: 摘要ID。
-            date: 日期字符串 (YYYY-MM-DD)。
-
-        Returns:
-            是否删除成功。
-        """
-        path = self._get_l2_path(date)
-        data = self._load_json(path)
-        original_len = len(data)
-        data = [d for d in data if d.get("summary_id") != summary_id]
-        if len(data) < original_len:
-            self._save_json(path, data)
-            return True
-        return False
-
-    # L3重要记忆操作
-
-    def add_l3_memory(
-        self,
-        user_id: str,
-        content: str,
-        metadata: dict[str, Any] | None = None,
-    ) -> str:
-        """添加L3重要记忆。
+        """添加/覆盖指定日期的 L2 摘要。
 
         Args:
             user_id: 用户标识符。
-            content: 记忆内容。
-            metadata: 元数据。
+            date: 日期（YYYY-MM-DD）。
+            summary: 摘要内容。
+            importance: 重要性分数（0-10）。
+            hidden: 是否在注入时隐藏。
 
         Returns:
-            创建的记忆ID。
+            创建的 L2SummaryItem。
+        """
+        item = L2SummaryItem(
+            summary_id=str(uuid.uuid4()),
+            user_id=user_id,
+            date=date,
+            summary=summary,
+            importance=importance,
+            timestamp=self._now_ts(),
+            hidden=hidden,
+        )
+        path = self._get_l2_path(user_id)
+        data = self._load_json(path)
+        # 同一日期覆盖写入
+        data = [d for d in data if d.get("date") != date]
+        data.append(item.to_dict())
+        self._save_json(path, data)
+        return item
+
+    def get_daily_summaries(
+        self, user_id: str, *, last: int | None = None,
+    ) -> list[L2SummaryItem]:
+        """获取用户 L2 日摘要。
+
+        Args:
+            user_id: 用户标识符。
+            last: 返回最近 N 天，为 None 返回全部。
+
+        Returns:
+            L2SummaryItem 列表（按日期降序）。
+        """
+        items = self._load_all_l2(user_id)
+        items.sort(key=lambda i: i.date, reverse=True)
+        if last is not None:
+            items = items[:last]
+        return items
+
+    def get_l2_summaries_for_date(
+        self, date: str,
+    ) -> list[L2SummaryItem]:
+        """按日期查询 L2 摘要（跨用户，用于调度器遍历）。"""
+        results: list[L2SummaryItem] = []
+        for f in self._l2_dir.glob("*.json"):
+            for d in self._load_json(f):
+                if d.get("date") == date:
+                    results.append(L2SummaryItem.from_dict(d))
+        return results
+
+    def delete_old_summaries(
+        self, user_id: str, ttl: int | None = None,
+    ) -> int:
+        """删除超过 TTL 天的 L2 摘要。
+
+        Args:
+            user_id: 用户标识符。
+            ttl: 保留天数，为 None 使用 config.l2_ttl。
+
+        Returns:
+            删除的条目数。
+        """
+        if ttl is None:
+            ttl = self._config.l2_ttl
+        cutoff_date = (datetime.now(timezone.utc) - timedelta(days=ttl)).strftime(
+            "%Y-%m-%d"
+        )
+        path = self._get_l2_path(user_id)
+        data = self._load_json(path)
+        original_len = len(data)
+        data = [d for d in data if d.get("date", "") >= cutoff_date]
+        removed = original_len - len(data)
+        if removed > 0:
+            self._save_json(path, data)
+        return removed
+
+    def _load_all_l2(self, user_id: str) -> list[L2SummaryItem]:
+        path = self._get_l2_path(user_id)
+        return [L2SummaryItem.from_dict(d) for d in self._load_json(path)]
+
+    # ==================================================================
+    # L2 Path A — 渐进周摘要
+    # ==================================================================
+
+    def get_weekly_summary(self, user_id: str) -> dict[str, Any] | None:
+        """获取用户周摘要。
+
+        Returns:
+            dict with keys: user_id, summary, week_start, updated_at；
+            无文件时返回 None。
+        """
+        path = self._get_weekly_path(user_id)
+        data = self._load_json(path)
+        if not data:
+            return None
+        return data[0] if isinstance(data, list) else data
+
+    def set_weekly_summary(
+        self, user_id: str, summary: str, week_start: str,
+    ) -> None:
+        """写入/覆盖用户周摘要。
+
+        Args:
+            user_id: 用户标识符。
+            summary: 周摘要内容。
+            week_start: 周起始日期（YYYY-MM-DD，周一）。
+        """
+        record: dict[str, Any] = {
+            "user_id": user_id,
+            "summary": summary,
+            "week_start": week_start,
+            "updated_at": self._now_ts(),
+        }
+        self._save_json(self._get_weekly_path(user_id), [record])
+
+    def clear_weekly_summary(self, user_id: str) -> bool:
+        """清空用户周摘要（周一重置）。
+
+        Returns:
+            是否实际删除了文件。
+        """
+        path = self._get_weekly_path(user_id)
+        if path.exists():
+            path.unlink()
+            return True
+        return False
+
+    # ==================================================================
+    # L3 — 重要记忆元数据
+    # ==================================================================
+
+    def add_l3_memory(
+        self, user_id: str, content: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """添加 L3 记忆。
+
+        Returns:
+            创建的 memory_id。
         """
         memory_id = str(uuid.uuid4())
         item = L3MemoryItem(
@@ -405,7 +495,7 @@ class MemoryStorage:
             user_id=user_id,
             content=content,
             metadata=metadata or {},
-            timestamp=datetime.now(timezone.utc).timestamp(),
+            timestamp=self._now_ts(),
         )
         path = self._get_l3_path(user_id)
         data = self._load_json(path)
@@ -414,28 +504,12 @@ class MemoryStorage:
         return memory_id
 
     def get_l3_memories(self, user_id: str) -> list[L3MemoryItem]:
-        """获取用户所有L3记忆。
-
-        Args:
-            user_id: 用户标识符。
-
-        Returns:
-            L3记忆项列表。
-        """
+        """获取用户全部 L3 记忆元数据。"""
         path = self._get_l3_path(user_id)
-        data = self._load_json(path)
-        return [L3MemoryItem.from_dict(d) for d in data]
+        return [L3MemoryItem.from_dict(d) for d in self._load_json(path)]
 
     def delete_l3_memory(self, user_id: str, memory_id: str) -> bool:
-        """删除L3记忆。
-
-        Args:
-            user_id: 用户标识符。
-            memory_id: 记忆ID。
-
-        Returns:
-            是否删除成功。
-        """
+        """按 memory_id 删除 L3 记忆。"""
         path = self._get_l3_path(user_id)
         data = self._load_json(path)
         original_len = len(data)
@@ -445,27 +519,27 @@ class MemoryStorage:
             return True
         return False
 
-    # 对话会话管理
+    # ==================================================================
+    # Session
+    # ==================================================================
 
     def get_active_dialogue(self, user_id: str) -> list[L1MemoryItem]:
-        """获取用户当前活跃对话。
-
-        Args:
-            user_id: 用户标识符。
-
-        Returns:
-            L1记忆项列表。
-        """
+        """获取用户活跃对话（委托给 get_l1_dialogues）。"""
         return self.get_l1_dialogues(user_id)
 
-    def end_dialogue(self, user_id: str) -> None:
-        """结束用户当前对话（暂无特殊处理）。
+    # ==================================================================
+    # 工具
+    # ==================================================================
 
-        Args:
-            user_id: 用户标识符。
-        """
-        pass
+    def get_all_users(self) -> list[str]:
+        """收集所有存储中有数据的用户 ID（去重）。"""
+        users: set[str] = set()
+        for d in (self._l1_dir, self._l2_dir, self._l3_dir, self._weekly_dir):
+            if d.exists():
+                for f in d.glob("*.json"):
+                    users.add(f.stem)
+        return sorted(users)
 
-    def save(self) -> None:
-        """保存所有数据（暂无特殊处理）。"""
-        pass
+
+def _ts_to_date(ts: float) -> str:
+    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
