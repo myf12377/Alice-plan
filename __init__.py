@@ -1,35 +1,11 @@
 """
 astrbot_alice_memory_modul — Alice 三层记忆系统插件
 提供 L1/L2/L3 三层记忆存储功能，支持 ChromaDB 向量检索与 LLM 压缩/分析。
-
-导出内容:
-    - MemorySettings: 配置模型
-    - MemoryStorage: 存储模块
-    - IdentityModule: 身份模块
-    - VectorStore: 向量存储模块
-    - ImportanceAnalyzer: 重要性分析模块
-    - DialogueCompressor: 对话压缩模块
 """
 
-from .memory import (
-    DialogueCompressor,
-    IdentityModule,
-    ImportanceAnalyzer,
-    MemorySettings,
-    MemoryStorage,
-    VectorStore,
-)
+__version__ = "2.0.0-dev"
 
-# v1.0 旧入口已归档至 _legacy/astrbot_plugin_alice_memory_system_v1_legacy.py
-# 新入口 main.py 待重构完成后创建
+# 延迟导入 — 插件部署在 data/plugins/ 下时，memory 是子包而非顶层模块。
+# 模块通过 memory/__init__.py 使用相对导入统一导出。
+# 主入口: main.py 的 AliceMemoryPlugin(Star)
 
-__all__ = [
-    "DialogueCompressor",
-    "IdentityModule",
-    "ImportanceAnalyzer",
-    "MemorySettings",
-    "MemoryStorage",
-    "VectorStore",
-]
-
-__version__ = "1.0.0"

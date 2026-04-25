@@ -1,104 +1,17 @@
-name: alice_memory_system
+name: astrbot_alice_memory_modul
 desc: |
-  Alice 三层记忆系统 - 基于 LLM 的智能记忆管理插件
+  Alice 三层记忆系统 - 基于 LLM 的智能记忆管理插件 (v2.0 重构)
+
+  记忆层次:
+  - L1 原始对话: 日内短期记忆，自动存储对话记录
+  - L2 Path A 渐进周摘要: 上下文记忆，每日凌晨合并压缩
+  - L2 Path B 每日磁盘摘要: 历史记忆，独立日摘要保留7天
+  - L3 长期向量记忆: 重要性评估 + 语义检索 + 衰减模型（艾宾浩斯遗忘曲线）
 
   功能特性:
-  - L1 原始对话: 自动存储用户与助手的对话记录
-  - L2 每日摘要: 使用 LLM 将每日对话压缩为摘要
-  - L3 重要记忆: 自动识别并向量化存储重要信息
-  - 数据导出/导入: 支持 .astrmem 和 .json 格式
-  - 自动备份: 数据存储在 data/plugin_data/alice_memory_storage/{bot_name} 目录
-
+  - 四管线独立注入: L1/L2-A/L2-B/L3 各自管理上下文标记
+  - 自然遗忘曲线: 衰减公式 effective = importance × 0.995^days + 访问加成
+  - 手动压缩: /compact 命令支持 Path A/B 压缩
+  - 数据迁移: 支持 .astrmem 和 ChromaDB 导出/导入
 author: Alice
-version: 1.0.0
-
-config_spec:
-  - key: l1_enabled
-    label: 启用 L1 记忆存储
-    type: bool
-    default: true
-    desc: 是否自动存储对话到 L1 记忆
-
-  - key: l1_ttl_days
-    label: L1 记忆保留天数
-    type: int
-    default: 7
-    min: 1
-    max: 365
-    desc: L1 原始对话的保留天数
-
-  - key: l2_enabled
-    label: 启用 L2 摘要压缩
-    type: bool
-    default: true
-    desc: 是否启用每日对话压缩为摘要
-
-  - key: l2_ttl_days
-    label: L2 记忆保留天数
-    type: int
-    default: 7
-    min: 1
-    max: 365
-    desc: L2 摘要的保留天数
-
-  - key: l3_enabled
-    label: 启用 L3 重要记忆
-    type: bool
-    default: true
-    desc: 是否启用 L3 重要记忆向量存储
-
-  - key: importance_threshold
-    label: 重要性阈值
-    type: int
-    default: 8
-    min: 0
-    max: 10
-    desc: 重要性分数达到此阈值则存入 L3
-
-  - key: l3_recheck_interval_days
-    label: L3 重评间隔天数
-    type: int
-    default: 30
-    min: 1
-    max: 365
-    desc: 定期重新评估 L3 记忆重要性的间隔
-
-  - key: compress_model
-    label: 压缩模型
-    type: str
-    default: ""
-    desc: 用于压缩的 LLM 模型名称,空则使用默认
-
-  - key: importance_analyze_model
-    label: 重要性分析模型
-    type: str
-    default: ""
-    desc: 用于分析重要性的 LLM 模型名称,空则使用默认
-
-  - key: llm_max_tokens
-    label: LLM 最大 Token 数
-    type: int
-    default: 1024
-    min: 256
-    max: 8192
-    desc: LLM 请求的最大 Token 数量
-
-  - key: llm_temperature
-    label: LLM 温度参数
-    type: float
-    default: 0.7
-    min: 0.0
-    max: 2.0
-    desc: LLM 生成的随机性温度
-
-  - key: silent_mode
-    label: 静默模式
-    type: bool
-    default: false
-    desc: 减少日志输出
-
-  - key: data_dir
-    label: 数据存储目录
-    type: str
-    default: "data/plugin_data/alice_memory_storage"
-    desc: 数据存储的目录路径（实际路径按机器人名称进一步划分）
+version: 2.0.0-dev
