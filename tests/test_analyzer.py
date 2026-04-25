@@ -77,8 +77,8 @@ class TestImportanceAnalyzer:
         analyzer = ImportanceAnalyzer(mock_context, config)
         mock_context.llm_generate.return_value = "7"
         await analyzer.analyze("Test content")
-        call_kwargs = mock_context.llm_generate.call_args
-        assert call_kwargs[1]["generate_config"]["model"] == "custom-model"
+        kwargs = mock_context.llm_generate.call_args.kwargs
+        assert kwargs["model"] == "custom-model"
 
     @pytest.mark.asyncio
     async def test_analyze_empty_model_uses_default(
@@ -88,8 +88,8 @@ class TestImportanceAnalyzer:
         analyzer = ImportanceAnalyzer(mock_context, config)
         mock_context.llm_generate.return_value = "5"
         await analyzer.analyze("Test content")
-        call_kwargs = mock_context.llm_generate.call_args
-        assert "model" not in call_kwargs[1]["generate_config"]
+        kwargs = mock_context.llm_generate.call_args.kwargs
+        assert "model" not in kwargs
 
     @pytest.mark.asyncio
     async def test_should_promote_to_l3(

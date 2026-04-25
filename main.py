@@ -291,15 +291,14 @@ class AliceMemoryPlugin(Star):
         elif mode == "llm":
             try:
                 prompt = self.plugin_config.manual_compress_llm_prompt
-                # 使用 compress_model 或默认
-                generate_config = {
+                kwargs = {
                     "max_tokens": self.plugin_config.llm_max_tokens,
                     "temperature": self.plugin_config.llm_temperature,
                 }
                 if self.plugin_config.compress_model:
-                    generate_config["model"] = self.plugin_config.compress_model
+                    kwargs["model"] = self.plugin_config.compress_model
                 feedback = await self._analyzer._context.llm_generate(
-                    prompt, generate_config=generate_config,
+                    prompt=prompt, **kwargs,
                 )
                 return feedback.strip()
             except Exception:

@@ -127,8 +127,8 @@ class TestDialogueCompressor:
         )
         mock_context.llm_generate.return_value = "Summary"
         await compressor.compress_day("user123", "2024-04-20")
-        call_kwargs = mock_context.llm_generate.call_args
-        assert call_kwargs[1]["generate_config"]["model"] == "custom-compress-model"
+        kwargs = mock_context.llm_generate.call_args.kwargs
+        assert kwargs["model"] == "custom-compress-model"
 
     # Path A：周摘要
     # ================================================================

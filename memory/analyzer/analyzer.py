@@ -95,14 +95,13 @@ class ImportanceAnalyzer:
     # ==================================================================
 
     async def _call_llm(self, prompt: str) -> str:
-        model = self._config.importance_analyze_model or None
-        generate_config: dict[str, Any] = {
+        kwargs: dict[str, Any] = {
             "max_tokens": self._config.llm_max_tokens,
             "temperature": self._config.llm_temperature,
         }
-        if model:
-            generate_config["model"] = model
-        return await self._context.llm_generate(prompt, generate_config=generate_config)
+        if self._config.importance_analyze_model:
+            kwargs["model"] = self._config.importance_analyze_model
+        return await self._context.llm_generate(prompt=prompt, **kwargs)
 
     # ==================================================================
     # 内部：Prompt 构建
