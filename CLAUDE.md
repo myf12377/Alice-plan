@@ -31,7 +31,7 @@
 
 ```
 astrbot_alice_memory_modul/
-├── main.py                        # [待创建] Star 子类主入口（第5层）
+├── main.py                        # ✅ Star 子类主入口（第5层）— C2 完成
 ├── _conf_schema.json              # ✅ 36键框架配置 schema
 ├── metadata.yaml                  # [待更新] 插件元信息
 ├── memory/
