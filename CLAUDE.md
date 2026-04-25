@@ -2,7 +2,7 @@
 
 `astrbot_alice_memory_modul` — 三层记忆存储系统（L1原始对话 / L2双路中期记忆 / L3长期向量记忆）。
 
-> **重构中** — 旧 v1.0 入口已归档至 `_legacy/`。完整架构设计见 plan 文件。
+> **v2.0 重构完成** — 所有模块已迁移到 PluginConfig，89 项测试通过。
 
 ## AI 行为规则
 
@@ -31,9 +31,9 @@
 
 ```
 astrbot_alice_memory_modul/
-├── main.py                        # ✅ Star 子类主入口（第5层）— C2 完成
+├── main.py                        # ✅ Star 子类主入口（第5层）— C2 完成（4命令+silent反馈）
 ├── _conf_schema.json              # ✅ 36键框架配置 schema
-├── metadata.yaml                  # [待更新] 插件元信息
+├── metadata.yaml                  # ✅ v2.0.0
 ├── memory/
 │   ├── plugin_config.py           # ✅ PluginConfig 36字段 Pydantic 模型（第0层）
 │   ├── context_injector.py        # ✅ 上下文注入（第3层）— B2 完成
@@ -255,7 +255,7 @@ logger.debug(f"[AliceMemory] 阶段 | 详细信息...")
 
 | 命令 | 功能 |
 |------|------|
-| `/compact [日期] [--hidden\|--visible]` | 手动压缩（无参=Path A，指定日期=Path B） |
+| `/compact [日期]` | 手动压缩（无参=Path A 周摘要，指定日期=Path B 日摘要） |
 | `/important [消息ID]` | 标记重要记忆 → L3 |
 | `/forget [记忆ID]` | 删除指定记忆 |
 | `/show_memory [查询]` | 搜索 L3 记忆 |

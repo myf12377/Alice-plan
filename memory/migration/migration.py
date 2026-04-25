@@ -12,36 +12,23 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from memory.settings import MemorySettings
+    from memory.plugin_config import PluginConfig
 
 
 class MigrationModule:
     """记忆数据迁移模块。
 
     支持导出/导入 .astrmem JSON 格式和 ChromaDB parquet 格式。
-
-    属性:
-        data_dir: 数据存储根目录。
-        settings: 记忆配置。
     """
 
-    def __init__(
-        self,
-        data_dir: Path,
-        settings: MemorySettings,
-    ) -> None:
-        """初始化迁移模块。
-
-        Args:
-            data_dir: 数据存储根目录。
-            settings: 记忆配置。
-        """
-        self._data_dir = data_dir
-        self._settings = settings
-        self._l1_dir = data_dir / "l1"
-        self._l2_dir = data_dir / "l2"
-        self._l3_dir = data_dir / "l3"
-        self._chroma_dir = data_dir / "chroma"
+    def __init__(self, config: PluginConfig) -> None:
+        """初始化迁移模块。"""
+        self._config = config
+        self._data_dir = config.data_dir
+        self._l1_dir = config.data_dir / "l1"
+        self._l2_dir = config.data_dir / "l2"
+        self._l3_dir = config.data_dir / "l3"
+        self._chroma_dir = config.data_dir / "chroma"
 
     def export_astrmem(
         self,
@@ -59,10 +46,10 @@ class MigrationModule:
         """
         from memory.storage.storage import MemoryStorage
 
-        storage = MemoryStorage(self._data_dir, self._settings)
+        storage = MemoryStorage(self._config)
 
         l1_dialogues = storage.get_l1_dialogues(user_id)
-        l2_summaries = storage.get_l2_summaries()
+        l2_summaries = storage.get_daily_summaries(user_id)
         l3_memories = storage.get_l3_memories(user_id)
 
         export_data = {
@@ -106,7 +93,7 @@ class MigrationModule:
             MemoryStorage,
         )
 
-        storage = MemoryStorage(self._data_dir, self._settings)
+        storage = MemoryStorage(self._config)
 
         with open(input_path, "r", encoding="utf-8") as f:
             import_data = json.load(f)
@@ -131,7 +118,7 @@ class MigrationModule:
         for s in import_data.get("l2_summaries", []):
             s_item = L2SummaryItem.from_dict(s)
             storage.add_summary(
-                s_item.date, s_item.summary, s_item.importance, s_item.hidden
+                user_id, s_item.date, s_item.summary, s_item.importance, s_item.hidden,
             )
             l2_count += 1
 
@@ -164,7 +151,7 @@ class MigrationModule:
         """
         from memory.vector_store.vector_store import VectorStore
 
-        vector_store = VectorStore(self._data_dir, self._settings)
+        vector_store = VectorStore(self._data_dir, self._config)
         memories = vector_store.get_user_memories(user_id)
 
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -190,7 +177,7 @@ class MigrationModule:
             "output_path": str(output_dir / f"{user_id}_l3.json"),
         }
 
-    def import_chroma(
+    async def import_chroma(
         self,
         user_id: str,
         input_path: Path,
@@ -213,7 +200,7 @@ class MigrationModule:
         if version != "1.0":
             raise ValueError(f"不支持的导出版本: {version}")
 
-        vector_store = VectorStore(self._data_dir, self._settings)
+        vector_store = VectorStore(self._data_dir, self._config)
 
         memories = import_data.get("memories", [])
         imported_count = 0
@@ -221,7 +208,7 @@ class MigrationModule:
         for memory in memories:
             content = memory.get("content", "")
             metadata = memory.get("metadata", {})
-            vector_store.add_memory(user_id, content, metadata)
+            await vector_store.add_memory(user_id, content, metadata)
             imported_count += 1
 
         vector_store.close()

@@ -39,6 +39,7 @@ class TestDialogueCompressor:
     def mock_context(self) -> MagicMock:
         context = MagicMock()
         context.llm_generate = AsyncMock()
+        context.get_current_chat_provider_id = AsyncMock(return_value="test-provider")
         return context
 
     @pytest.fixture
@@ -101,7 +102,7 @@ class TestDialogueCompressor:
         storage.update_l1_dialogue_timestamp("user123", item1.message_id, date_ts)
         storage.update_l1_dialogue_timestamp("user123", item2.message_id, date_ts)
 
-        mock_context.llm_generate.return_value = "Summary of conversation"
+        mock_context.llm_generate.return_value = MagicMock(completion_text="Summary of conversation")
 
         result = await compressor.compress_day("user123", "2024-04-20")
         assert result == "Summary of conversation"
@@ -125,7 +126,7 @@ class TestDialogueCompressor:
         storage.update_l1_dialogue_timestamp(
             "user123", item.message_id, date_obj.timestamp(),
         )
-        mock_context.llm_generate.return_value = "Summary"
+        mock_context.llm_generate.return_value = MagicMock(completion_text="Summary")
         await compressor.compress_day("user123", "2024-04-20")
         kwargs = mock_context.llm_generate.call_args.kwargs
         assert kwargs["model"] == "custom-compress-model"
@@ -148,6 +149,6 @@ class TestDialogueCompressor:
     ) -> None:
         """有对话 + 日摘要时生成周摘要。"""
         storage.append_dialogue("user_x", "user", "重要消息")
-        mock_context.llm_generate.return_value = "本周摘要：用户讨论了重要话题"
+        mock_context.llm_generate.return_value = MagicMock(completion_text="本周摘要：用户讨论了重要话题")
         result = await compressor.compress_context_summary("user_x")
         assert "重要" in result or result is not None

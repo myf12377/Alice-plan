@@ -83,6 +83,15 @@ class AliceMemoryPlugin(Star):
             if not content.strip():
                 return
 
+            # silent 模式下 /compact 命令不存入 L1，也不触发后续管线
+            # 框架在 on_llm_request 中可能去掉命令前缀 "/"
+            msg = content.strip().lstrip("/").lstrip("#")
+            if (
+                msg.startswith("compact")
+                and self.plugin_config.manual_compress_feedback_mode == "silent"
+            ):
+                return
+
             # 存储到 L1
             self._storage.append_dialogue(user_id, "user", content)
             logger.debug(
@@ -100,7 +109,9 @@ class AliceMemoryPlugin(Star):
             # L3 晋升判断
             if self.plugin_config.l3_enabled:
                 try:
-                    score = await self._analyzer.analyze(content)
+                    score = await self._analyzer.analyze(
+                        content, event.unified_msg_origin,
+                    )
                     logger.debug(
                         "[AliceMemory] 重要性评分 | score=%d | threshold=%d",
                         score, self.plugin_config.importance_threshold,
@@ -153,33 +164,52 @@ class AliceMemoryPlugin(Star):
         self, event: AstrMessageEvent, date: str | None = None
     ):
         """手动压缩记忆。/compact → Path A 周压缩，/compact 2026-04-25 → Path B 日压缩。"""
+        # silent 模式：阻止事件继续传播到 LLM 管线
+        silent = self.plugin_config.manual_compress_feedback_mode == "silent"
+        if silent:
+            event.stop_event()
+
         platform = event.get_platform_name()
         platform_user_id = event.get_sender_id()
         user_id = self._identity.get_user_id(platform, platform_user_id)
         if not user_id:
-            yield event.plain_result("[AliceMemory] 未能识别用户身份")
+            if not silent:
+                yield event.plain_result("[AliceMemory] 未能识别用户身份")
             return
 
         try:
             if date:
-                item = await self._compressor.compress_day(user_id, date)
+                item = await self._compressor.compress_day(
+                    user_id, date, umo=event.unified_msg_origin,
+                )
                 if item is None:
-                    yield event.plain_result(f"[AliceMemory] {date} 无对话可压缩")
+                    if not silent:
+                        yield event.plain_result(f"[AliceMemory] {date} 无对话可压缩")
                     return
                 result_text = f"{date} 对话已压缩为日摘要"
             else:
-                item = await self._compressor.compress_context_summary(user_id)
+                item = await self._compressor.compress_context_summary(
+                    user_id, event.unified_msg_origin,
+                )
                 if item is None:
-                    yield event.plain_result("[AliceMemory] 无内容可压缩为周摘要")
+                    if not silent:
+                        yield event.plain_result("[AliceMemory] 无内容可压缩为周摘要")
                     return
                 result_text = "周摘要已更新"
 
-            feedback = await self._build_feedback(user_id, result_text)
+            # silent 模式不反馈，也不调 LLM 生成反馈（节省调用）
+            if silent:
+                return
+
+            feedback = await self._build_feedback(
+                user_id, result_text, event.unified_msg_origin,
+            )
             yield event.plain_result(feedback)
 
         except Exception as e:
             logger.error("[AliceMemory] /compact 失败 | %s", e, exc_info=True)
-            yield event.plain_result(f"[AliceMemory] 压缩失败: {e}")
+            if not silent:
+                yield event.plain_result(f"[AliceMemory] 压缩失败: {e}")
 
     # =========================================================================
     # /important — 标记重要记忆 → L3
@@ -202,7 +232,7 @@ class AliceMemoryPlugin(Star):
             return
 
         try:
-            score = await self._analyzer.analyze(content)
+            score = await self._analyzer.analyze(content, event.unified_msg_origin)
             vid = await self._vector_store.add_memory(
                 user_id, content, {"importance": score},
             )
@@ -275,7 +305,9 @@ class AliceMemoryPlugin(Star):
     # 压缩反馈
     # =========================================================================
 
-    async def _build_feedback(self, user_id: str, default_text: str) -> str:
+    async def _build_feedback(
+        self, user_id: str, default_text: str, umo: str = "",
+    ) -> str:
         """根据 manual_compress_feedback_mode 生成压缩反馈。"""
         mode = self.plugin_config.manual_compress_feedback_mode
 
@@ -292,16 +324,18 @@ class AliceMemoryPlugin(Star):
             try:
                 prompt = self.plugin_config.manual_compress_llm_prompt
                 kwargs = {
-                    "chat_provider_id": self.context.get_current_chat_provider_id(),
+                    "chat_provider_id": await self.context.get_current_chat_provider_id(umo),
                     "max_tokens": self.plugin_config.llm_max_tokens,
                     "temperature": self.plugin_config.llm_temperature,
                 }
                 if self.plugin_config.compress_model:
                     kwargs["model"] = self.plugin_config.compress_model
-                feedback = await self.context.llm_generate(
+                resp = await self.context.llm_generate(
                     prompt=prompt, **kwargs,
                 )
-                return feedback.strip()
+                text = getattr(resp, "completion_text", "") or ""
+                if text.strip():
+                    return text.strip()
             except Exception:
                 return default_text
         else:

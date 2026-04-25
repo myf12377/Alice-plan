@@ -33,14 +33,14 @@ class ImportanceAnalyzer:
     # 单条分析
     # ==================================================================
 
-    async def analyze(self, content: str) -> int:
+    async def analyze(self, content: str, umo: str = "") -> int:
         """分析单条内容重要性。
 
         Returns:
             0-10 分数。
         """
         prompt = self._build_analyze_prompt(content)
-        response = await self._call_llm(prompt)
+        response = await self._call_llm(prompt, umo)
         return self._parse_score(response)
 
     async def should_promote_to_l3(self, content: str) -> bool:
@@ -52,11 +52,14 @@ class ImportanceAnalyzer:
     # 灰区批量重评
     # ==================================================================
 
-    async def batch_recheck(self, memories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    async def batch_recheck(
+        self, memories: list[dict[str, Any]], umo: str = "",
+    ) -> list[dict[str, Any]]:
         """对灰区记忆批量 LLM 重评。
 
         Args:
             memories: [{id, content, metadata, ...}, ...]
+            umo: unified_message_origin，用于获取当前会话的 provider ID。
 
         Returns:
             [{vector_id, new_score, should_keep}, ...]
@@ -70,7 +73,7 @@ class ImportanceAnalyzer:
         for i in range(0, len(memories), batch_size):
             batch = memories[i:i + batch_size]
             prompt = self._build_batch_prompt(batch)
-            response = await self._call_llm(prompt)
+            response = await self._call_llm(prompt, umo)
             batch_results = self._parse_batch_response(response, batch)
             results.extend(batch_results)
 
@@ -80,29 +83,32 @@ class ImportanceAnalyzer:
     # 记忆合并
     # ==================================================================
 
-    async def merge_content(self, content_1: str, content_2: str) -> str:
+    async def merge_content(
+        self, content_1: str, content_2: str, umo: str = "",
+    ) -> str:
         """LLM 合并两条相似记忆，去冗余保留关键信息。
 
         Returns:
             合并后的内容字符串。
         """
         prompt = self._build_merge_prompt(content_1, content_2)
-        response = await self._call_llm(prompt)
+        response = await self._call_llm(prompt, umo)
         return response.strip()
 
     # ==================================================================
     # 内部：LLM 调用
     # ==================================================================
 
-    async def _call_llm(self, prompt: str) -> str:
+    async def _call_llm(self, prompt: str, umo: str = "") -> str:
         kwargs: dict[str, Any] = {
-            "chat_provider_id": self._context.get_current_chat_provider_id(),
+            "chat_provider_id": await self._context.get_current_chat_provider_id(umo),
             "max_tokens": self._config.llm_max_tokens,
             "temperature": self._config.llm_temperature,
         }
         if self._config.importance_analyze_model:
             kwargs["model"] = self._config.importance_analyze_model
-        return await self._context.llm_generate(prompt=prompt, **kwargs)
+        resp = await self._context.llm_generate(prompt=prompt, **kwargs)
+        return getattr(resp, "completion_text", "") or ""
 
     # ==================================================================
     # 内部：Prompt 构建

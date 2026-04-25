@@ -14,4 +14,4 @@ desc: |
   - 手动压缩: /compact 命令支持 Path A/B 压缩
   - 数据迁移: 支持 .astrmem 和 ChromaDB 导出/导入
 author: Alice
-version: 2.0.0-dev
+version: 2.0.0

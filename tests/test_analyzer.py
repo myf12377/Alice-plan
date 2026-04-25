@@ -28,6 +28,7 @@ class TestImportanceAnalyzer:
     def mock_context(self) -> MagicMock:
         context = MagicMock()
         context.llm_generate = AsyncMock()
+        context.get_current_chat_provider_id = AsyncMock(return_value="test-provider")
         return context
 
     @pytest.fixture
@@ -64,7 +65,7 @@ class TestImportanceAnalyzer:
     async def test_analyze_success(
         self, analyzer: ImportanceAnalyzer, mock_context: MagicMock,
     ) -> None:
-        mock_context.llm_generate.return_value = "8"
+        mock_context.llm_generate.return_value = MagicMock(completion_text="8")
         score = await analyzer.analyze("Important personal preference")
         assert score == 8
         mock_context.llm_generate.assert_called_once()
@@ -75,7 +76,7 @@ class TestImportanceAnalyzer:
     ) -> None:
         config.importance_analyze_model = "custom-model"
         analyzer = ImportanceAnalyzer(mock_context, config)
-        mock_context.llm_generate.return_value = "7"
+        mock_context.llm_generate.return_value = MagicMock(completion_text="7")
         await analyzer.analyze("Test content")
         kwargs = mock_context.llm_generate.call_args.kwargs
         assert kwargs["model"] == "custom-model"
@@ -86,7 +87,7 @@ class TestImportanceAnalyzer:
     ) -> None:
         config.importance_analyze_model = ""
         analyzer = ImportanceAnalyzer(mock_context, config)
-        mock_context.llm_generate.return_value = "5"
+        mock_context.llm_generate.return_value = MagicMock(completion_text="5")
         await analyzer.analyze("Test content")
         kwargs = mock_context.llm_generate.call_args.kwargs
         assert "model" not in kwargs
@@ -95,7 +96,7 @@ class TestImportanceAnalyzer:
     async def test_should_promote_to_l3(
         self, analyzer: ImportanceAnalyzer,
     ) -> None:
-        analyzer._context.llm_generate.return_value = "9"
+        analyzer._context.llm_generate.return_value = MagicMock(completion_text="9")
         result = await analyzer.should_promote_to_l3("Any content")
         assert result is True
 
@@ -113,10 +114,10 @@ class TestImportanceAnalyzer:
     async def test_batch_recheck(
         self, analyzer: ImportanceAnalyzer, mock_context: MagicMock,
     ) -> None:
-        mock_context.llm_generate.return_value = (
+        mock_context.llm_generate.return_value = MagicMock(completion_text=(
             "[0] 7 keep 用户偏好信息\n"
             "[1] 2 drop 信息已过时"
-        )
+        ))
         memories = [
             {
                 "id": "vid-1",
@@ -144,7 +145,9 @@ class TestImportanceAnalyzer:
     async def test_merge_content(
         self, analyzer: ImportanceAnalyzer, mock_context: MagicMock,
     ) -> None:
-        mock_context.llm_generate.return_value = "用户偏好美式咖啡，每天早晨一杯"
+        mock_context.llm_generate.return_value = MagicMock(
+            completion_text="用户偏好美式咖啡，每天早晨一杯",
+        )
         result = await analyzer.merge_content(
             "用户喜欢咖啡",
             "用户每天早晨喝美式咖啡",
