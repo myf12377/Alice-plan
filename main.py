@@ -2,7 +2,7 @@
 
 L1 原始对话 / L2 双路中期记忆 / L3 长期向量记忆（衰减模型）。
 
-重构中 — 当前 B1 阶段：Layer 1 完成 + Compressor 已接入。
+重构中 — 当前 B2 阶段：全链路贯通（存储→压缩→注入）。
 """
 
 from astrbot.api import logger
@@ -12,6 +12,7 @@ from astrbot.api.star import Context, Star
 
 from .memory.analyzer.analyzer import ImportanceAnalyzer
 from .memory.compressor.compressor import DialogueCompressor
+from .memory.context_injector import ContextInjector
 from .memory.identity.identity import IdentityModule
 from .memory.plugin_config import PluginConfig
 from .memory.storage.storage import MemoryStorage
@@ -56,13 +57,17 @@ class AliceMemoryPlugin(Star):
 
         # Layer 2: 压缩器
         self._compressor = DialogueCompressor(context, self._storage, self.plugin_config)
-        logger.info("[AliceMemory] 压缩器就绪 | Compressor ✓")
+
+        # Layer 3: 上下文注入器
+        self._injector = ContextInjector(
+            self._storage, self._vector_store, self._identity, self.plugin_config,
+        )
+        logger.info("[AliceMemory] 模块就绪 | Compressor ✓ | ContextInjector ✓")
 
         # TODO: Layer 2: MigrationModule
-        # TODO: Layer 3: ContextInjector
         # TODO: Layer 4: Scheduler
 
-        logger.info("[AliceMemory] 插件初始化完成（B1）")
+        logger.info("[AliceMemory] 插件初始化完成（B2）— 全链路贯通")
 
     # =========================================================================
     # LLM 钩子
@@ -96,7 +101,12 @@ class AliceMemoryPlugin(Star):
                 user_id[:8], len(content),
             )
 
-            # TODO: 后续迭代接入 ContextInjector 注入管线
+            # 注入全部记忆管线
+            await self._injector.inject_all(user_id, req)
+            logger.info(
+                "[AliceMemory] 注入完成 | contexts=%d | extra_parts=%d",
+                len(req.contexts), len(req.extra_user_content_parts),
+            )
 
         except Exception:
             logger.error("[AliceMemory] on_llm_request 异常", exc_info=True)

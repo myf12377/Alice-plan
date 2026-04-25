@@ -10,10 +10,10 @@
 | [analyzer/](analyzer/) | ImportanceAnalyzer | 1 | ✅ 完成 |
 | [compressor/](compressor/) | DialogueCompressor | 2 | ✅ 完成 |
 | [migration/](migration/) | MigrationModule | 2 | 稳定 |
-| context_injector.py | ContextInjector | 3 | 重构中（有已知 bug） |
+| context_injector.py | ContextInjector | 3 | ✅ 完成 |
 | [scheduler/](scheduler/) | Scheduler | 4 | 重构中 |
 | plugin_config.py | PluginConfig | 0 | ✅ 完成 |
 | _conf_schema.json | 框架配置 schema | — | ✅ 完成 |
-| main.py | AliceMemoryPlugin | 5 | A3（Layer 1 全部就绪） |
+| main.py | AliceMemoryPlugin | 5 | B2（全链路贯通：存储→压缩→注入） |
 
 模块边界见各自 CLAUDE.md。
