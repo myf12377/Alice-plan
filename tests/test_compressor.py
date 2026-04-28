@@ -126,7 +126,7 @@ class TestDialogueCompressor:
         storage.update_l1_dialogue_timestamp(
             "user123", item.message_id, date_obj.timestamp(),
         )
-        mock_context.llm_generate.return_value = MagicMock(completion_text="Summary")
+        mock_context.llm_generate.return_value = MagicMock(completion_text="This is a summary of the day's conversation")
         await compressor.compress_day("user123", "2024-04-20")
         kwargs = mock_context.llm_generate.call_args.kwargs
         assert kwargs["model"] == "custom-compress-model"

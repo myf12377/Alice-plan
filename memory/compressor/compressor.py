@@ -11,6 +11,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
+from astrbot.api import logger
+
 if TYPE_CHECKING:
     from memory.plugin_config import PluginConfig
     from memory.storage.storage import MemoryStorage
@@ -60,6 +62,8 @@ class DialogueCompressor:
 
         content = self._format_dialogues(dialogues)
         summary = await self._generate_summary(content, path="b", umo=umo)
+        if not summary:
+            return None
         importance = await self._estimate_importance(summary, umo=umo)
 
         # 修复：user_id 作为第一参数
@@ -107,6 +111,11 @@ class DialogueCompressor:
         )
         summary = await self._call_llm(prompt, umo)
         summary = summary.strip()
+        if not summary:
+            if weekly:
+                logger.warning("[AliceMemory] Path A LLM 失败，保留上周摘要")
+                return weekly["summary"]
+            return None
         today_date = datetime.now(timezone.utc).date()
         week_start = today_date - timedelta(days=today_date.weekday())
         self._storage.set_weekly_summary(
@@ -161,14 +170,37 @@ class DialogueCompressor:
 
     async def _call_llm(self, prompt: str, umo: str = "") -> str:
         kwargs: dict[str, Any] = {
-            "chat_provider_id": await self._context.get_current_chat_provider_id(umo),
             "max_tokens": self._config.llm_max_tokens,
             "temperature": self._config.llm_temperature,
         }
         if self._config.compress_model:
             kwargs["model"] = self._config.compress_model
-        resp = await self._context.llm_generate(prompt=prompt, **kwargs)
-        return getattr(resp, "completion_text", "") or ""
+        if umo:
+            try:
+                kwargs["chat_provider_id"] = await self._context.get_current_chat_provider_id(umo)
+            except Exception:
+                pass
+        try:
+            resp = await self._context.llm_generate(prompt=prompt, **kwargs)
+        except Exception:
+            kwargs.pop("chat_provider_id", None)
+            resp = await self._context.llm_generate(prompt=prompt, **kwargs)
+        text = getattr(resp, "completion_text", "") or ""
+        if not self._looks_valid(text.strip()):
+            logger.warning("[AliceMemory] Compressor LLM 返回异常内容 | resp=%s...", text[:60])
+            return ""
+        return text.strip()
+
+    @staticmethod
+    def _looks_valid(text: str) -> bool:
+        """快速校验 LLM 返回内容是否为有效摘要而非 prompt 回显。"""
+        if not text or len(text) < 5:
+            return False
+        prompt_markers = ["请提供", "请根据", "请按照", "请输出", "请仔细"]
+        for marker in prompt_markers:
+            if marker in text[:50]:
+                return False
+        return True
 
     @staticmethod
     def _parse_score(response: str) -> int:
