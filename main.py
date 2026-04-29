@@ -50,15 +50,22 @@ class AliceMemoryPlugin(Star):
         )
         logger.info("[AliceMemory] 模块就绪 | Compressor ✓ | ContextInjector ✓")
 
-        # Layer 4: 调度
+        # Layer 4: 调度（注册在 initialize() 中完成）
         self._scheduler = Scheduler(
             context, self._storage, self._identity, self._vector_store,
             self.plugin_config, self._compressor, self._analyzer,
         )
-        self._scheduler.start()
-        logger.info("[AliceMemory] 定时调度就绪 | Scheduler ✓")
 
         logger.info("[AliceMemory] 插件初始化完成")
+
+    # =========================================================================
+    # 生命周期
+    # =========================================================================
+
+    async def initialize(self) -> None:
+        """框架在 __init__ 后自动调用 — 注册定时任务。"""
+        await self._scheduler.start()
+        logger.info("[AliceMemory] 定时调度就绪 | Scheduler ✓")
 
     # =========================================================================
     # LLM 钩子
