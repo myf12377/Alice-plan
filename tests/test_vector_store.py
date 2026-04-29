@@ -144,6 +144,18 @@ class TestVectorStore:
         result = vector_store.find_similar("user1", [0.1] * 128, 0.9)
         assert result == []
 
+    async def test_find_similar_by_content_empty(
+        self, vector_store: VectorStore,
+    ) -> None:
+        result = await vector_store.find_similar_by_content("user1", "test content", 0.9)
+        assert result == []
+
+    async def test_find_similar_by_content_empty_content(
+        self, vector_store: VectorStore,
+    ) -> None:
+        result = await vector_store.find_similar_by_content("user1", "", 0.9)
+        assert result == []
+
     async def test_get_all_users(self, vector_store: VectorStore) -> None:
         await vector_store.add_memory("user_a", "A")
         await vector_store.add_memory("user_b", "B")

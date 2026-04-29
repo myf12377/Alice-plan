@@ -79,11 +79,11 @@ class TestScheduler:
     # 注册
     # ================================================================
 
-    def test_start_registers_5_tasks(
+    def test_start_registers_6_tasks(
         self, scheduler: Scheduler, mock_context: MagicMock,
     ) -> None:
         scheduler.start()
-        assert mock_context.cron_manager.add_basic_job.call_count == 5
+        assert mock_context.cron_manager.add_basic_job.call_count == 6
 
     def test_start_no_cron_manager(
         self, storage, identity_module, config, mock_compressor, mock_analyzer,
@@ -124,3 +124,30 @@ class TestScheduler:
         self, scheduler: Scheduler,
     ) -> None:
         await scheduler._l3_maintenance()  # 无 VectorStore，静默返回
+
+    # L3 月度合并
+    # ================================================================
+
+    @pytest.mark.asyncio
+    async def test_l3_merge_no_vector_store(
+        self, scheduler: Scheduler,
+    ) -> None:
+        await scheduler._l3_merge()  # 无 VectorStore，静默返回
+
+    @pytest.mark.asyncio
+    async def test_l3_merge(
+        self, scheduler: Scheduler, mock_analyzer: MagicMock,
+        identity_module: IdentityModule,
+    ) -> None:
+        """有 2 条记忆但相似度不足，不应触发合并。"""
+        identity_module.register_user("test", "uid1")
+        scheduler._vector_store = MagicMock()
+        scheduler._vector_store.get_user_memories.return_value = [
+            {"id": "v1", "content": "我喜欢吃苹果", "metadata": {"importance": 8}},
+            {"id": "v2", "content": "今天天气真好", "metadata": {"importance": 3}},
+        ]
+        scheduler._vector_store.find_similar_by_content = AsyncMock(return_value=[])
+        mock_analyzer.merge_content = AsyncMock()
+        scheduler._vector_store.merge_memories = AsyncMock()
+        await scheduler._l3_merge()
+        mock_analyzer.merge_content.assert_not_called()
