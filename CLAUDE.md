@@ -2,7 +2,7 @@
 
 `astrbot_alice_memory_modul` — 三层记忆存储系统（L1原始对话 / L2双路中期记忆 / L3长期向量记忆）。
 
-> **v2.0 重构完成** — 所有模块已迁移到 PluginConfig，89 项测试通过。
+> **v2.1.1** — 定时任务 async 修复，6 段调度全部注册成功。
 
 ## AI 行为规则
 
@@ -33,7 +33,7 @@
 astrbot_alice_memory_modul/
 ├── main.py                        # ✅ Star 子类主入口（第5层）— C2 完成（4命令+silent反馈）
 ├── _conf_schema.json              # ✅ 36键框架配置 schema
-├── metadata.yaml                  # ✅ v2.0.0
+├── metadata.yaml                  # ✅ v2.1.1
 ├── memory/
 │   ├── plugin_config.py           # ✅ PluginConfig 36字段 Pydantic 模型（第0层）
 │   ├── context_injector.py        # ✅ 上下文注入（第3层）— B2 完成
@@ -42,7 +42,7 @@ astrbot_alice_memory_modul/
 │   ├── vector_store/              # ✅ ChromaDB 向量（第1层）— A2 完成
 │   ├── analyzer/                  # ✅ LLM 重要性分析（第1层）— A3 完成
 │   ├── compressor/                # ✅ Path A/B 压缩（第2层）— B1 完成
-│   ├── scheduler/                 # ✅ 5段定时调度（第4层）— C1 完成
+│   ├── scheduler/                 # ✅ 6段定时调度（第4层）— C1 完成
 │   └── migration/                 # 导入导出 [稳定]
 ```
 
@@ -73,6 +73,7 @@ PluginConfig (0) → Identity(1) / Storage(1) / VectorStore(1) / Analyzer(1)
 | 03:00 L3衰减 | Scheduler | VectorStore.apply_decay→get_gray→Analyzer.batch_recheck |
 | 04:00 Path A | Scheduler | Storage(L1+L2+周)→Compressor(LLM)→Storage(覆写周) |
 | 周一05:00 | Scheduler | Storage.clear_weekly_summary |
+| 每月1日06:00 | Scheduler | VectorStore.find_similar→Analyzer.merge→VectorStore.merge_memories |
 | /compact | Main命令 | Compressor→Storage |
 | /show_memory | Main命令 | VectorStore.search |
 | 导出/导入 | Main命令 | MigrationModule |
@@ -114,7 +115,11 @@ class AliceMemoryPlugin(Star):
         self._scheduler = Scheduler(context, self._storage, self._identity,
                                      self._vector_store, self.plugin_config,
                                      self._compressor, self._analyzer)
-        self._scheduler.start()
+        # start() 在 async initialize() 中调用（Star 生命周期钩子）
+
+    async def initialize(self) -> None:
+        """框架在 __init__ 后自动调用 — 注册定时任务。"""
+        await self._scheduler.start()
 ```
 
 ### 钩子注册
@@ -235,7 +240,7 @@ logger.debug(f"[AliceMemory] 阶段 | 详细信息...")
 |------|------|------|
 | `__init__` 完成 | INFO | `插件初始化 | fields=N | data_dir=...` |
 | 各 Layer 模块就绪 | INFO | `模块就绪 | Storage ✓ | VectorStore ✓ | ...` |
-| Scheduler 启动 | INFO | `定时任务注册 | tasks=5` |
+| Scheduler 启动 | INFO | `定时任务注册 | tasks=6` |
 | on_llm_request 入口 | INFO | `on_llm_request | uid=xxx(8) | msg_len=N` |
 | 每条管线注入 | DEBUG | `注入 L1: N条 → contexts` / `注入 L2 Path B: 最近N天` |
 | 注入完成 | INFO | `注入完成 | contexts+N | extra_parts+N` |

@@ -1,4 +1,4 @@
-# AstrBot Alice Memory Plugin v2.0
+# AstrBot Alice Memory Plugin v2.1.1
 
 AstrBot 三层记忆插件 — 让 AI 拥有类人记忆：短期对话、中期概括、长期沉淀。
 
@@ -114,6 +114,7 @@ effective_score = importance × 0.995^days + min(access_count, 10) × 0.3
 | 03:00 | L3 维护：衰减计算 + 灰区重评 + 低分删除 |
 | 04:00 | Path A 周压缩：合并生成渐进周摘要 |
 | 周一 05:00 | 周摘要重置 |
+| 每月 1 日 06:00 | L3 月度合并：全量相似记忆扫描与归并 |
 
 ## 数据管理
 
@@ -151,6 +152,13 @@ effective_score = importance × 0.995^days + min(access_count, 10) × 0.3
 MIT
 
 ## 更新日志
+
+### v2.1.1（2026-04-30）
+
+**修复：**
+- 定时任务注册从同步 `__init__` 移到 `async initialize()` 生命周期钩子，修复 `add_basic_job`（async 方法）因缺少 `await` 导致 6 个定时任务从未实际注册到 APScheduler 的问题
+- `Scheduler.start()` 改为 `async def`，`add_basic_job` 调用加 `await`
+- 云端部署验证：6 个定时任务已成功注册，`next_run_time` 排队正确
 
 ### v2.1.0（2026-04-29）
 
