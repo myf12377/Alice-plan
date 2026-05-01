@@ -1,4 +1,4 @@
-# AstrBot Alice Memory Plugin v2.1.1
+# AstrBot Alice Memory Plugin v2.1.2
 
 AstrBot 三层记忆插件 — 让 AI 拥有类人记忆：短期对话、中期概括、长期沉淀。
 
@@ -152,6 +152,15 @@ effective_score = importance × 0.995^days + min(access_count, 10) × 0.3
 MIT
 
 ## 更新日志
+
+### v2.1.2（2026-05-01）
+
+**修复：**
+- Compressor/Analyzer `_call_llm` 增加默认 provider fallback（`get_using_provider()`），修复定时任务场景因缺少 `chat_provider_id` 导致 LLM 调用失败
+- Path A 周摘要 `compress_context_summary` 按本周过滤日摘要，防止上周残留数据污染新周摘要
+- Scheduler `_compress_context` 移除冗余 `set_weekly_summary` 调用（Compressor 内部已正确写入）
+- Scheduler `_safe_wrap` 改为 async wrapper，确保 CronJobManager 正确 await 协程
+- 6 个定时任务方法增加入口 INFO 日志，便于运维排查
 
 ### v2.1.1（2026-04-30）
 

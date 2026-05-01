@@ -33,7 +33,7 @@
 astrbot_alice_memory_modul/
 ├── main.py                        # ✅ Star 子类主入口（第5层）— C2 完成（4命令+silent反馈）
 ├── _conf_schema.json              # ✅ 36键框架配置 schema
-├── metadata.yaml                  # ✅ v2.1.1
+├── metadata.yaml                  # ✅ v2.1.2
 ├── memory/
 │   ├── plugin_config.py           # ✅ PluginConfig 36字段 Pydantic 模型（第0层）
 │   ├── context_injector.py        # ✅ 上下文注入（第3层）— B2 完成
