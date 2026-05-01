@@ -40,6 +40,9 @@ class TestDialogueCompressor:
         context = MagicMock()
         context.llm_generate = AsyncMock()
         context.get_current_chat_provider_id = AsyncMock(return_value="test-provider")
+        default_provider = MagicMock()
+        default_provider.meta.return_value.id = "default-provider"
+        context.get_using_provider.return_value = default_provider
         return context
 
     @pytest.fixture
@@ -48,7 +51,10 @@ class TestDialogueCompressor:
 
     @pytest.fixture
     def compressor(
-        self, mock_context: MagicMock, storage: MemoryStorage, config: PluginConfig,
+        self,
+        mock_context: MagicMock,
+        storage: MemoryStorage,
+        config: PluginConfig,
     ) -> DialogueCompressor:
         return DialogueCompressor(mock_context, storage, config)
 
@@ -74,7 +80,8 @@ class TestDialogueCompressor:
         assert compressor._parse_score("") == 5
 
     def test_get_dialogues_empty(
-        self, compressor: DialogueCompressor,
+        self,
+        compressor: DialogueCompressor,
     ) -> None:
         assert compressor._get_dialogues("nonexistent", "2024-04-20") == []
 
@@ -83,14 +90,17 @@ class TestDialogueCompressor:
 
     @pytest.mark.asyncio
     async def test_compress_day_no_dialogues(
-        self, compressor: DialogueCompressor,
+        self,
+        compressor: DialogueCompressor,
     ) -> None:
         result = await compressor.compress_day("nonexistent", "2024-04-20")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_compress_day_success(
-        self, compressor: DialogueCompressor, mock_context: MagicMock,
+        self,
+        compressor: DialogueCompressor,
+        mock_context: MagicMock,
         storage: MemoryStorage,
     ) -> None:
         item1 = storage.append_dialogue("user123", "user", "Hello")
@@ -102,7 +112,9 @@ class TestDialogueCompressor:
         storage.update_l1_dialogue_timestamp("user123", item1.message_id, date_ts)
         storage.update_l1_dialogue_timestamp("user123", item2.message_id, date_ts)
 
-        mock_context.llm_generate.return_value = MagicMock(completion_text="Summary of conversation")
+        mock_context.llm_generate.return_value = MagicMock(
+            completion_text="Summary of conversation"
+        )
 
         result = await compressor.compress_day("user123", "2024-04-20")
         assert result == "Summary of conversation"
@@ -115,7 +127,10 @@ class TestDialogueCompressor:
 
     @pytest.mark.asyncio
     async def test_compress_day_with_custom_model(
-        self, mock_context: MagicMock, storage: MemoryStorage, config: PluginConfig,
+        self,
+        mock_context: MagicMock,
+        storage: MemoryStorage,
+        config: PluginConfig,
     ) -> None:
         config.compress_model = "custom-compress-model"
         compressor = DialogueCompressor(mock_context, storage, config)
@@ -124,9 +139,13 @@ class TestDialogueCompressor:
             tzinfo=timezone.utc
         )
         storage.update_l1_dialogue_timestamp(
-            "user123", item.message_id, date_obj.timestamp(),
+            "user123",
+            item.message_id,
+            date_obj.timestamp(),
         )
-        mock_context.llm_generate.return_value = MagicMock(completion_text="This is a summary of the day's conversation")
+        mock_context.llm_generate.return_value = MagicMock(
+            completion_text="This is a summary of the day's conversation"
+        )
         await compressor.compress_day("user123", "2024-04-20")
         kwargs = mock_context.llm_generate.call_args.kwargs
         assert kwargs["model"] == "custom-compress-model"
@@ -136,7 +155,8 @@ class TestDialogueCompressor:
 
     @pytest.mark.asyncio
     async def test_compress_context_summary_empty(
-        self, compressor: DialogueCompressor,
+        self,
+        compressor: DialogueCompressor,
     ) -> None:
         """无内容时应返回 None。"""
         result = await compressor.compress_context_summary("user_empty")
@@ -144,11 +164,34 @@ class TestDialogueCompressor:
 
     @pytest.mark.asyncio
     async def test_compress_context_summary(
-        self, compressor: DialogueCompressor, mock_context: MagicMock,
+        self,
+        compressor: DialogueCompressor,
+        mock_context: MagicMock,
         storage: MemoryStorage,
     ) -> None:
         """有对话 + 日摘要时生成周摘要。"""
         storage.append_dialogue("user_x", "user", "重要消息")
-        mock_context.llm_generate.return_value = MagicMock(completion_text="本周摘要：用户讨论了重要话题")
+        mock_context.llm_generate.return_value = MagicMock(
+            completion_text="本周摘要：用户讨论了重要话题"
+        )
         result = await compressor.compress_context_summary("user_x")
         assert "重要" in result or result is not None
+
+    # _call_llm 默认 provider 场景
+    # ================================================================
+
+    @pytest.mark.asyncio
+    async def test_call_llm_uses_default_provider_when_no_umo(
+        self,
+        compressor: DialogueCompressor,
+        mock_context: MagicMock,
+    ) -> None:
+        """umo 为空时应通过 get_using_provider 获取默认 provider。"""
+        mock_context.llm_generate.return_value = MagicMock(
+            completion_text="test response"
+        )
+        result = await compressor._call_llm("test prompt", umo="")
+        assert result == "test response"
+        kwargs = mock_context.llm_generate.call_args.kwargs
+        assert kwargs["chat_provider_id"] == "default-provider"
+        mock_context.get_using_provider.assert_called_once()
