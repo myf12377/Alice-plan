@@ -26,7 +26,10 @@ class DialogueCompressor:
     """
 
     def __init__(
-        self, context: Any, storage: MemoryStorage, config: PluginConfig,
+        self,
+        context: Any,
+        storage: MemoryStorage,
+        config: PluginConfig,
     ) -> None:
         """初始化压缩器。
 
@@ -44,7 +47,11 @@ class DialogueCompressor:
     # ==================================================================
 
     async def compress_day(
-        self, user_id: str, date: str, hidden: bool = False, umo: str = "",
+        self,
+        user_id: str,
+        date: str,
+        hidden: bool = False,
+        umo: str = "",
     ) -> str | None:
         """将用户某一天的对话压缩为 L2 日摘要。
 
@@ -76,7 +83,9 @@ class DialogueCompressor:
     # ==================================================================
 
     async def compress_context_summary(
-        self, user_id: str, umo: str = "",
+        self,
+        user_id: str,
+        umo: str = "",
     ) -> str | None:
         """生成渐进周摘要（合并模式）。
 
@@ -91,16 +100,26 @@ class DialogueCompressor:
         cst = ZoneInfo("Asia/Shanghai")
         today = datetime.now(cst).strftime("%Y-%m-%d")
         today_dialogues = self._storage.get_l1_dialogues(user_id, date=today)
-        today_text = self._format_dialogues(
-            [f"{d.role}: {d.content}" for d in today_dialogues]
-        ) if today_dialogues else "（今日暂无对话）"
+        today_text = (
+            self._format_dialogues([f"{d.role}: {d.content}" for d in today_dialogues])
+            if today_dialogues
+            else "（今日暂无对话）"
+        )
 
         daily_summaries = self._storage.get_daily_summaries(
             user_id,
             last=self._config.l2_daily_inject_count,
         )
-        daily_text = "\n".join(s.date + ": " + s.summary for s in daily_summaries) \
-            if daily_summaries else "（暂无日摘要）"
+        # 仅保留本周的日摘要，避免上周残留数据污染周摘要
+        today_date = datetime.now(cst).date()
+        week_start = today_date - timedelta(days=today_date.weekday())
+        week_start_str = week_start.strftime("%Y-%m-%d")
+        daily_summaries = [s for s in daily_summaries if s.date >= week_start_str]
+        daily_text = (
+            "\n".join(s.date + ": " + s.summary for s in daily_summaries)
+            if daily_summaries
+            else "（暂无日摘要）"
+        )
 
         # 如果没有任何实质内容，跳过
         if not today_dialogues and not daily_summaries and weekly is None:
@@ -116,9 +135,12 @@ class DialogueCompressor:
         else:
             prompt = (
                 template_a
-                + "\n\n已有周摘要：\n" + weekly_text
-                + "\n\n今日对话：\n" + today_dialogues
-                + "\n\n近日摘要：\n" + daily_summaries
+                + "\n\n已有周摘要：\n"
+                + weekly_text
+                + "\n\n今日对话：\n"
+                + today_dialogues
+                + "\n\n近日摘要：\n"
+                + daily_summaries
                 + "\n\n请输出合并后的完整周摘要："
             )
         summary = await self._call_llm(prompt, umo)
@@ -131,7 +153,9 @@ class DialogueCompressor:
         today_date = datetime.now(cst).date()
         week_start = today_date - timedelta(days=today_date.weekday())
         self._storage.set_weekly_summary(
-            user_id, summary, week_start.strftime("%Y-%m-%d"),
+            user_id,
+            summary,
+            week_start.strftime("%Y-%m-%d"),
         )
         return summary
 
@@ -155,7 +179,11 @@ class DialogueCompressor:
         return "\n".join(dialogues)
 
     async def _generate_summary(
-        self, content: str, *, path: str = "b", umo: str = "",
+        self,
+        content: str,
+        *,
+        path: str = "b",
+        umo: str = "",
     ) -> str:
         """调用 LLM 生成摘要。
 
@@ -165,7 +193,8 @@ class DialogueCompressor:
             umo: unified_message_origin，用于获取当前会话的 provider ID。
         """
         template = (
-            self._config.l2_compress_prompt_a if path == "a"
+            self._config.l2_compress_prompt_a
+            if path == "a"
             else self._config.l2_compress_prompt_b
         )
         if "{content}" in template:
@@ -193,17 +222,24 @@ class DialogueCompressor:
             kwargs["model"] = self._config.compress_model
         if umo:
             try:
-                kwargs["chat_provider_id"] = await self._context.get_current_chat_provider_id(umo)
+                kwargs[
+                    "chat_provider_id"
+                ] = await self._context.get_current_chat_provider_id(umo)
             except Exception:
                 pass
-        try:
-            resp = await self._context.llm_generate(prompt=prompt, **kwargs)
-        except Exception:
-            kwargs.pop("chat_provider_id", None)
-            resp = await self._context.llm_generate(prompt=prompt, **kwargs)
+        if "chat_provider_id" not in kwargs:
+            try:
+                prov = self._context.get_using_provider()
+                if prov:
+                    kwargs["chat_provider_id"] = prov.meta().id
+            except Exception:
+                pass
+        resp = await self._context.llm_generate(prompt=prompt, **kwargs)
         text = getattr(resp, "completion_text", "") or ""
         if not self._looks_valid(text.strip()):
-            logger.warning("[AliceMemory] Compressor LLM 返回异常内容 | resp=%s...", text[:60])
+            logger.warning(
+                "[AliceMemory] Compressor LLM 返回异常内容 | resp=%s...", text[:60]
+            )
             return ""
         return text.strip()
 
