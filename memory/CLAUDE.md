@@ -12,7 +12,7 @@
 | [migration/](migration/) | MigrationModule | 2 | ✅ 完成 |
 | context_injector.py | ContextInjector | 3 | ✅ v2.2.0 三管线注入（L1分组+L2合并+L3按需） |
 | [scheduler/](scheduler/) | Scheduler | 4 | ✅ 完成 |
-| plugin_config.py | PluginConfig | 0 | ✅ 完成（37字段） |
+| plugin_config.py | PluginConfig | 0 | ✅ 完成（39字段） |
 | _conf_schema.json | 框架配置 schema | — | ✅ 完成 |
 | main.py | AliceMemoryPlugin | 5 | ✅ 完成（4命令+4种反馈模式+silent完全静默） |
 
