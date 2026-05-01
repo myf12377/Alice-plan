@@ -1,5 +1,5 @@
 """
-上下文注入器测试 — 使用 PluginConfig。
+上下文注入器测试 — v2.2.0 三管线注入。
 """
 
 from __future__ import annotations
@@ -12,12 +12,11 @@ from astrbot.api.provider import ProviderRequest
 from astrbot.core.agent.message import TextPart
 from memory.context_injector import (
     ContextInjector,
-    L2_PATH_A_MARKER,
-    L2_PATH_B_MARKER,
+    L2_MARKER,
     L3_MARKER,
 )
 from memory.plugin_config import PluginConfig
-from memory.storage.storage import L1MemoryItem, L2SummaryItem
+from memory.storage.storage import L2SummaryItem
 
 
 class TestContextInjector:
@@ -30,8 +29,8 @@ class TestContextInjector:
             inject_l2_path_a=True,
             inject_l2_path_b=True,
             inject_l3=True,
-            l1_search_limit=10,
-            l2_daily_inject_count=3,
+            l1_inject_rounds=80,
+            l2_daily_inject_count=7,
             l3_merge_similarity=0.9,
         )
 
@@ -63,7 +62,7 @@ class TestContextInjector:
     def make_request(prompt: str = "") -> ProviderRequest:
         return ProviderRequest(prompt=prompt)
 
-    # L1
+    # L1 — 全量分组注入
     # ================================================================
 
     async def test_inject_l1(
@@ -71,78 +70,116 @@ class TestContextInjector:
         injector: ContextInjector,
         mock_storage: MagicMock,
     ) -> None:
-        mock_storage.get_today_dialogues.return_value = [
-            L1MemoryItem("m1", "u1", "user", "Hello", 1000.0),
-            L1MemoryItem("m2", "u1", "assistant", "Hi", 1001.0),
+        mock_storage.get_recent_rounds.return_value = [
+            {"role": "system", "content": "[2026-05-01 对话]"},
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi"},
         ]
         req = self.make_request()
         await injector.inject_l1("u1", req)
-        assert len(req.contexts) == 2
-        assert req.contexts[0]["role"] == "user"
+        assert len(req.contexts) == 3
+        assert req.contexts[0]["role"] == "system"
+        assert "2026-05-01" in req.contexts[0]["content"]
+        assert req.contexts[1]["role"] == "user"
 
     async def test_inject_l1_empty(
         self,
         injector: ContextInjector,
         mock_storage: MagicMock,
     ) -> None:
-        mock_storage.get_today_dialogues.return_value = []
+        mock_storage.get_recent_rounds.return_value = []
         req = self.make_request()
         await injector.inject_l1("u1", req)
         assert len(req.contexts) == 0
 
-    # L2 Path A
-    # ================================================================
-
-    async def test_inject_l2_path_a(
+    async def test_inject_l1_zero_rounds(
         self,
         injector: ContextInjector,
         mock_storage: MagicMock,
     ) -> None:
+        """l1_inject_rounds=0 时 get_recent_rounds 返回空。"""
+        mock_storage.get_recent_rounds.return_value = []
+        req = self.make_request()
+        await injector.inject_l1("u1", req)
+        assert len(req.contexts) == 0
+        mock_storage.get_recent_rounds.assert_called_once_with("u1")
+
+    # L2 — 去重合并
+    # ================================================================
+
+    async def test_inject_l2_merged_weekly_and_daily(
+        self,
+        injector: ContextInjector,
+        mock_storage: MagicMock,
+    ) -> None:
+        """周摘要 + 非本周日摘要合并注入。"""
         mock_storage.get_weekly_summary.return_value = {
             "summary": "本周讨论了记忆系统架构",
         }
+        mock_storage.get_daily_summaries.return_value = [
+            L2SummaryItem(
+                "s1", "u1", "2026-04-24", "上周四讨论了...", 5, 1000.0, False
+            ),
+            L2SummaryItem(
+                "s2", "u1", "2026-04-25", "上周五讨论了...", 5, 1000.0, False
+            ),
+        ]
         req = self.make_request()
-        await injector.inject_l2_path_a("u1", req)
+        await injector.inject_l2_merged("u1", req)
         assert len(req.extra_user_content_parts) == 1
-        assert L2_PATH_A_MARKER in str(req.extra_user_content_parts[0])
+        text = req.extra_user_content_parts[0].text
+        assert L2_MARKER in text
+        assert "周摘要" in text
+        assert "2026-04-24" in text
 
-    async def test_inject_l2_path_a_empty(
+    async def test_inject_l2_merged_excludes_current_week(
+        self,
+        injector: ContextInjector,
+        mock_storage: MagicMock,
+    ) -> None:
+        """本周日摘要应被排除（周摘要已覆盖）。"""
+        mock_storage.get_weekly_summary.return_value = {"summary": "本周摘要"}
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        cst = ZoneInfo("Asia/Shanghai")
+        today = datetime.now(cst).strftime("%Y-%m-%d")
+        mock_storage.get_daily_summaries.return_value = [
+            L2SummaryItem("s1", "u1", today, "今天的日摘要", 5, 1000.0, False),
+        ]
+        req = self.make_request()
+        await injector.inject_l2_merged("u1", req)
+        assert len(req.extra_user_content_parts) == 1
+        text = req.extra_user_content_parts[0].text
+        assert today not in text  # 本周的被排除
+        assert "周摘要" in text  # 周摘要保留
+
+    async def test_inject_l2_merged_empty(
         self,
         injector: ContextInjector,
         mock_storage: MagicMock,
     ) -> None:
         mock_storage.get_weekly_summary.return_value = None
-        req = self.make_request()
-        await injector.inject_l2_path_a("u1", req)
-        assert len(req.extra_user_content_parts) == 0
-
-    # L2 Path B
-    # ================================================================
-
-    async def test_inject_l2_path_b(
-        self,
-        injector: ContextInjector,
-        mock_storage: MagicMock,
-    ) -> None:
-        mock_storage.get_daily_summaries.return_value = [
-            L2SummaryItem("s1", "u1", "2026-04-24", "昨天讨论了...", 5, 1000.0, False),
-        ]
-        req = self.make_request()
-        await injector.inject_l2_path_b("u1", req)
-        assert len(req.extra_user_content_parts) == 1
-        assert L2_PATH_B_MARKER in str(req.extra_user_content_parts[0])
-
-    async def test_inject_l2_path_b_empty(
-        self,
-        injector: ContextInjector,
-        mock_storage: MagicMock,
-    ) -> None:
         mock_storage.get_daily_summaries.return_value = []
         req = self.make_request()
-        await injector.inject_l2_path_b("u1", req)
+        await injector.inject_l2_merged("u1", req)
         assert len(req.extra_user_content_parts) == 0
 
-    # L3
+    async def test_inject_l2_merged_hidden_excluded(
+        self,
+        injector: ContextInjector,
+        mock_storage: MagicMock,
+    ) -> None:
+        """hidden=True 的日摘要应被排除。"""
+        mock_storage.get_weekly_summary.return_value = None
+        mock_storage.get_daily_summaries.return_value = [
+            L2SummaryItem("s1", "u1", "2026-04-24", "隐藏的", 5, 1000.0, True),
+        ]
+        req = self.make_request()
+        await injector.inject_l2_merged("u1", req)
+        assert len(req.extra_user_content_parts) == 0
+
+    # L3 — 按需语义检索
     # ================================================================
 
     async def test_inject_l3(
@@ -177,7 +214,7 @@ class TestContextInjector:
         await injector.inject_l3("u1", req)
         assert len(req.extra_user_content_parts) == 0
 
-    # inject_all
+    # inject_all — 三管线编排
     # ================================================================
 
     async def test_inject_all(
@@ -186,20 +223,20 @@ class TestContextInjector:
         mock_storage: MagicMock,
         mock_vector_store: MagicMock,
     ) -> None:
-        mock_storage.get_today_dialogues.return_value = [
-            L1MemoryItem("m1", "u1", "user", "Hello", 1000.0),
+        mock_storage.get_recent_rounds.return_value = [
+            {"role": "system", "content": "[2026-05-01 对话]"},
+            {"role": "user", "content": "Hello"},
         ]
         mock_storage.get_weekly_summary.return_value = {"summary": "周摘要"}
-        mock_storage.get_daily_summaries.return_value = [
-            L2SummaryItem("s1", "u1", "2026-04-24", "日摘要", 5, 1000.0, False),
-        ]
+        mock_storage.get_daily_summaries.return_value = []
         mock_vector_store.search.return_value = [
             {"content": "L3 memory", "distance": 0.05},
         ]
         req = self.make_request(prompt="test")
         await injector.inject_all("u1", req)
-        assert len(req.contexts) == 1
-        assert len(req.extra_user_content_parts) == 3
+        # L1: 2 条 contexts, L2: 1 extra part, L3: 1 extra part
+        assert len(req.contexts) == 2
+        assert len(req.extra_user_content_parts) == 2
 
     async def test_inject_all_disabled(
         self,
@@ -227,9 +264,9 @@ class TestContextInjector:
     def test_clean_marker(self, injector: ContextInjector) -> None:
         req = self.make_request()
         req.extra_user_content_parts = [
-            TextPart(text=f"{L2_PATH_A_MARKER}\n旧周摘要"),
+            TextPart(text=f"{L2_MARKER}\n旧周摘要"),
             TextPart(text="其他内容"),
         ]
-        injector._clean_marker(req, L2_PATH_A_MARKER)
+        injector._clean_marker(req, L2_MARKER)
         assert len(req.extra_user_content_parts) == 1
         assert req.extra_user_content_parts[0].text == "其他内容"
