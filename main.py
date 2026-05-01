@@ -118,6 +118,11 @@ class AliceMemoryPlugin(Star):
                 len(content),
             )
 
+            # 清空 AstrBot 对话历史（由插件全权管理上下文）
+            if self.plugin_config.manage_context:
+                req.contexts = []
+                logger.info("[AliceMemory] 已清空 AstrBot 对话历史")
+
             # 注入全部记忆管线
             await self._injector.inject_all(user_id, req)
             logger.info(

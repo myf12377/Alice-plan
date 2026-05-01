@@ -15,7 +15,7 @@ desc: |
   - 手动压缩: /compact 命令支持 Path A/B 压缩
   - 数据迁移: 支持 .astrmem 和 ChromaDB 导出/导入
 author: Alice
-version: 2.1.2
+version: 2.1.3
 astrbot_version: ">=4.16"
 support_platforms:
   - qq_official

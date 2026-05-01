@@ -175,5 +175,11 @@
     "type": "bool",
     "description": "L3 记忆注入开关",
     "default": true
+  },
+  "manage_context": {
+    "type": "bool",
+    "description": "由插件管理上下文（清空 AstrBot 历史，使用 L1/L2/L3 注入）",
+    "default": false,
+    "hint": "开启后 AstrBot 的对话历史不送入 LLM，由插件的三层记忆替代。可大幅减少 token 消耗。"
   }
 }

@@ -1,4 +1,4 @@
-# AstrBot Alice Memory Plugin v2.1.2
+# AstrBot Alice Memory Plugin v2.1.3
 
 AstrBot 三层记忆插件 — 让 AI 拥有类人记忆：短期对话、中期概括、长期沉淀。
 
@@ -8,7 +8,7 @@ AstrBot 三层记忆插件 — 让 AI 拥有类人记忆：短期对话、中期
 - **L2 中期概括**：每日摘要 + 渐进周摘要，双路径自动压缩
 - **L3 长期沉淀**：重要记忆向量存储，艾宾浩斯衰减模型自然遗忘
 - **静默运行**：压缩后台自动执行，用户无感知
-- **前端可调**：36 项配置即插即用，全部有默认值
+- **前端可调**：37 项配置即插即用，全部有默认值
 - **数据安全**：支持完整备份/还原/导出/导入
 
 ## 快速开始
@@ -71,7 +71,7 @@ effective_score = importance × 0.995^days + min(access_count, 10) × 0.3
 
 ## 配置
 
-在 AstrBot Web 管理界面配置，共 36 项，全部有默认值。
+在 AstrBot Web 管理界面配置，共 37 项，全部有默认值。
 
 | 分类 | 关键配置项 |
 |------|-----------|
@@ -81,6 +81,7 @@ effective_score = importance × 0.995^days + min(access_count, 10) × 0.3
 | L3 | `l3_enabled`、`importance_threshold`(8)、`l3_decay_rate`(0.995)、`l3_delete_threshold`(3.0) |
 | LLM | `compress_model`、`importance_analyze_model`、`llm_max_tokens`(1024)、`llm_temperature`(0.7) |
 | 注入 | `inject_l1`、`inject_l2_path_a`、`inject_l2_path_b`、`inject_l3` |
+| 上下文 | `manage_context`(false) — 插件全权管理上下文，清空 AstrBot 对话历史 |
 | 反馈 | `manual_compress_feedback_mode`(llm) + 固定文本/LLM prompt |
 
 所有配置项详见 `_conf_schema.json`。
@@ -145,13 +146,22 @@ effective_score = importance × 0.995^days + min(access_count, 10) × 0.3
 
 - Python 3.10+
 - `ruff check --isolated .` / `ruff format --isolated .`
-- `pytest` — 89 项测试
+- `pytest` — 103 项测试
 
 ## 许可证
 
 MIT
 
 ## 更新日志
+
+### v2.1.3（2026-05-01）
+
+**新增：**
+- `manage_context` 配置项：开启后插件清空 AstrBot 对话历史，由 L1/L2/L3 三层记忆全权管理上下文，可将 prompt_tokens 从 ~850K 降至 ~3-5K
+- 默认关闭，需在 WebUI 手动开启
+
+**测试：**
+- 新增 7 项 manage_context 测试（配置字段 + 行为验证），总测试数 103
 
 ### v2.1.2（2026-05-01）
 

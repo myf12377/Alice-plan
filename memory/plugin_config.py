@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 class PluginConfig(BaseModel):
     """Alice 三层记忆系统配置。
 
-    36 字段，扁平结构，Pydantic 校验。
+    37 字段，扁平结构，Pydantic 校验。
     """
 
     # ==========================================================================
@@ -229,6 +229,10 @@ class PluginConfig(BaseModel):
     inject_l2_path_a: bool = Field(default=True, description="Path A 周摘要注入开关")
     inject_l2_path_b: bool = Field(default=True, description="Path B 日摘要注入开关")
     inject_l3: bool = Field(default=True, description="L3 记忆注入开关")
+    manage_context: bool = Field(
+        default=False,
+        description="由插件全权管理上下文，清空 AstrBot 对话历史",
+    )
 
     # ==========================================================================
     # 工厂方法

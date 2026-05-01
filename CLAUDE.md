@@ -2,7 +2,7 @@
 
 `astrbot_alice_memory_modul` — 三层记忆存储系统（L1原始对话 / L2双路中期记忆 / L3长期向量记忆）。
 
-> **v2.1.2** — 定时任务 LLM 调用修复，默认 provider fallback + Path A 周摘要防污染。
+> **v2.1.3** — 新增 `manage_context` 配置项，插件可全权管理上下文，清空 AstrBot 对话历史。
 
 ## AI 行为规则
 
@@ -31,7 +31,7 @@
 
 ```
 astrbot_alice_memory_modul/
-├── main.py                        # ✅ Star 子类主入口（第5层）— C2 完成（4命令+silent反馈）
+├── main.py                        # ✅ Star 子类主入口（第5层）— C2 完成（4命令+silent+manage_context）
 ├── _conf_schema.json              # ✅ 36键框架配置 schema
 ├── metadata.yaml                  # ✅ v2.1.2
 ├── memory/
@@ -66,7 +66,7 @@ PluginConfig (0) → Identity(1) / Storage(1) / VectorStore(1) / Analyzer(1)
 
 | 场景 | 入口 | 调用链 |
 |------|------|--------|
-| 用户消息注入 | Main.on_llm_request | Identity→Storage(写L1)→Injector(读全部→注入req) |
+| 用户消息注入 | Main.on_llm_request | Identity→Storage(写L1)→[清空contexts]→Injector(读全部→注入req) |
 | 判断晋升L3 | Main.on_llm_request | Analyzer.analyze→VectorStore.add→find_similar→merge |
 | 01:00 Path B | Scheduler | Storage(L1)→Compressor(LLM)→Storage(写L2) |
 | 02:00 L1清理 | Scheduler | Storage.delete_old_l1_dialogues |
@@ -206,6 +206,10 @@ if not user_id:
 # 存储（不受注入开关影响）
 self._storage.append_dialogue(user_id, role, content)
 
+# 清空 AstrBot 对话历史（manage_context 模式）
+if self.plugin_config.manage_context:
+    req.contexts = []
+
 # 注入（按管线开关独立控制）
 if self.plugin_config.inject_l1:
     await self._injector.inject_l1(user_id, req)
@@ -252,7 +256,7 @@ logger.debug(f"[AliceMemory] 阶段 | 详细信息...")
 
 ## 配置速查
 
-完整字段定义见 `memory/plugin_config.py` 的 `PluginConfig` 类（36字段，Pydantic BaseModel）。
+完整字段定义见 `memory/plugin_config.py` 的 `PluginConfig` 类（37字段，Pydantic BaseModel）。
 框架配置见 `_conf_schema.json`。
 工厂方法：`PluginConfig.defaults()` / `PluginConfig.from_framework_config(dict)`。
 
