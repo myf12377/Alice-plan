@@ -29,11 +29,6 @@ class TestManageContextConfig:
         config = PluginConfig.from_framework_config({})
         assert config.manage_context is False
 
-    def test_to_dict_includes_manage_context(self):
-        config = PluginConfig(manage_context=True)
-        d = config.to_dict()
-        assert "manage_context" in d
-        assert d["manage_context"] is True
 
 
 @pytest.fixture

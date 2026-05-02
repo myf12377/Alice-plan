@@ -67,23 +67,3 @@ class TestIdentityModule:
         assert id1 in all_users
         assert id2 in all_users
 
-    def test_link_users(self, identity_module: IdentityModule) -> None:
-        """测试链接两个用户。"""
-        id1 = identity_module.register_user("qqofficial", "user1")
-        id2 = identity_module.register_user("aiocqhttp", "user2")
-        result = identity_module.link_users(id1, id2)
-        assert result is True
-
-    def test_link_users_same_id(self, identity_module: IdentityModule) -> None:
-        """测试链接同一用户ID返回失败。"""
-        id1 = identity_module.register_user("qqofficial", "user1")
-        result = identity_module.link_users(id1, id1)
-        assert result is False
-
-    def test_get_linked_users(self, identity_module: IdentityModule) -> None:
-        """测试获取链接的用户列表。"""
-        id1 = identity_module.register_user("qqofficial", "user1")
-        id2 = identity_module.register_user("aiocqhttp", "user2")
-        identity_module.link_users(id1, id2)
-        linked = identity_module.get_linked_users(id1)
-        assert id2 in linked

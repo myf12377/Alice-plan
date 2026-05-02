@@ -33,7 +33,7 @@
 astrbot_alice_memory_modul/
 ├── main.py                        # ✅ Star 子类主入口（第5层）— C2 完成（4命令+silent+manage_context）
 ├── _conf_schema.json              # ✅ 39键框架配置 schema
-├── metadata.yaml                  # ✅ v2.2.0
+├── metadata.yaml                  # ✅ v2.3.0
 ├── memory/
 │   ├── plugin_config.py           # ✅ PluginConfig 39字段 Pydantic 模型（第0层）
 │   ├── context_injector.py        # ✅ 三管线注入（第3层）— L1分组+L2合并+L3按需
@@ -42,8 +42,7 @@ astrbot_alice_memory_modul/
 │   ├── vector_store/              # ✅ ChromaDB 向量（第1层）— A2 完成
 │   ├── analyzer/                  # ✅ LLM 重要性分析（第1层）— A3 完成
 │   ├── compressor/                # ✅ Path A/B 压缩（第2层）— B1 完成
-│   ├── scheduler/                 # ✅ 6段定时调度（第4层）— C1 完成
-│   └── migration/                 # 导入导出 [稳定]
+│   └── scheduler/                 # ✅ 6段定时调度（第4层）— C1 完成
 ```
 
 ## 依赖拓扑
@@ -51,7 +50,7 @@ astrbot_alice_memory_modul/
 ```
 PluginConfig (0) → Identity(1) / Storage(1) / VectorStore(1) / Analyzer(1)
                                      │
-                              Compressor(2) / Migration(2)
+                              Compressor(2)
                                      │
                               ContextInjector(3)
                                      │
@@ -69,14 +68,13 @@ PluginConfig (0) → Identity(1) / Storage(1) / VectorStore(1) / Analyzer(1)
 | 用户消息注入 | Main.on_llm_request | Identity→Storage(写L1)→[清空contexts]→Injector(读全部→注入req) |
 | 判断晋升L3 | Main.on_llm_request | Analyzer.analyze→VectorStore.add→find_similar→merge |
 | 01:00 Path B | Scheduler | Storage(L1)→Compressor(LLM)→Storage(写L2) |
-| 02:00 L1裁剪 | Scheduler | Storage.trim_to_recent_rounds(l1_save_rounds) |
+| 02:00 L1+L2清理 | Scheduler | Storage.trim_to_recent_rounds(l1_save_rounds) + Storage.delete_old_summaries(ttl=7) |
 | 03:00 L3衰减 | Scheduler | VectorStore.apply_decay→get_gray→Analyzer.batch_recheck |
 | 04:00 Path A | Scheduler | Storage(L1+L2+周)→Compressor(LLM)→Storage(覆写周) |
 | 周一05:00 | Scheduler | Storage.clear_weekly_summary |
 | 每月1日06:00 | Scheduler | VectorStore.find_similar→Analyzer.merge→VectorStore.merge_memories |
 | /compact | Main命令 | Compressor→Storage |
 | /show_memory | Main命令 | VectorStore.search |
-| 导出/导入 | Main命令 | MigrationModule |
 
 上下文字段注入位置：
 - L1 → `request.contexts`（按日期分组，system 标记日期边界）

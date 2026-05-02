@@ -18,9 +18,6 @@ def __init__(self, context: Any, config: PluginConfig) -> None
 async def analyze(self, content: str, umo: str = "") -> int: ...
 """单条分析，返回 0-10 分数。"""
 
-def should_promote_to_l3(self, content: str) -> bool: ...
-"""分数 ≥ importance_threshold → True。"""
-
 async def batch_recheck(self, memories: list[dict], umo: str = "") -> list[dict]: ...
 """灰区批量重评。
 输入: [{content, metadata, ...}, ...]

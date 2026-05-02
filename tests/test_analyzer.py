@@ -103,15 +103,6 @@ class TestImportanceAnalyzer:
         kwargs = mock_context.llm_generate.call_args.kwargs
         assert "model" not in kwargs
 
-    @pytest.mark.asyncio
-    async def test_should_promote_to_l3(
-        self,
-        analyzer: ImportanceAnalyzer,
-    ) -> None:
-        analyzer._context.llm_generate.return_value = MagicMock(completion_text="9")
-        result = await analyzer.should_promote_to_l3("Any content")
-        assert result is True
-
     # 灰区批量重评
     # ================================================================
 

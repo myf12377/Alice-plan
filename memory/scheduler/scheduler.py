@@ -146,8 +146,19 @@ class Scheduler:
                     keep,
                     total,
                 )
+
+            # L2 日摘要清理（7 天 TTL）
+            total_l2 = 0
+            for uid in self._identity_module.get_all_users():
+                removed_l2 = self._storage.delete_old_summaries(uid, ttl=7)
+                total_l2 += removed_l2
+            if total_l2:
+                logger.info(
+                    "[AliceMemory] L2 日摘要清理 | ttl=7 | 删除=%d 条",
+                    total_l2,
+                )
         except Exception:
-            logger.error("[AliceMemory] L1 裁剪异常", exc_info=True)
+            logger.error("[AliceMemory] L1/L2 清理异常", exc_info=True)
 
     # ==================================================================
     # 03:00 — L3 衰减 + 灰区重评

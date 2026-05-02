@@ -47,45 +47,6 @@ class TestMemoryStorage:
         dialogues = storage.get_l1_dialogues("user1")
         assert len(dialogues) == 2
 
-    def test_get_today_dialogues(self, storage: MemoryStorage) -> None:
-        """当日对话只返回今天的条目。"""
-        storage.append_dialogue("user1", "user", "Today msg")
-        today = storage.get_today_dialogues("user1")
-        assert len(today) == 1
-        assert today[0].content == "Today msg"
-
-    def test_delete_l1_dialogue(self, storage: MemoryStorage) -> None:
-        item = storage.append_dialogue("user1", "user", "Hello")
-        result = storage.delete_l1_dialogue("user1", item.message_id)
-        assert result is True
-        assert len(storage.get_l1_dialogues("user1")) == 0
-
-    def test_delete_l1_dialogue_not_found(self, storage: MemoryStorage) -> None:
-        result = storage.delete_l1_dialogue("user1", "nonexistent")
-        assert result is False
-
-    def test_delete_old_l1_dialogues(self, storage: MemoryStorage) -> None:
-        """过期 L1 对话应被清理。"""
-        storage.append_dialogue("user1", "user", "Old")
-        # 默认 retention=3 天，新消息不会被删
-        removed = storage.delete_old_l1_dialogues("user1")
-        assert removed == 0
-        # 用 retention_days=0 强制全部删除
-        removed = storage.delete_old_l1_dialogues("user1", retention_days=0)
-        assert removed == 1
-
-    def test_mark_dialogues_compressed(self, storage: MemoryStorage) -> None:
-        """标记压缩应设置 compressed=True。"""
-        storage.append_dialogue("user1", "user", "Msg 1")
-        storage.append_dialogue("user1", "assistant", "Msg 2")
-        import time
-
-        future_ts = time.time() + 3600
-        marked = storage.mark_dialogues_compressed("user1", future_ts)
-        assert marked == 2
-        for d in storage.get_l1_dialogues("user1"):
-            assert d.compressed is True
-
     # L2 Path B — 每日摘要
     # ================================================================
 
@@ -162,23 +123,3 @@ class TestMemoryStorage:
         storage.add_l3_memory("user1", "Memory 2")
         assert len(storage.get_l3_memories("user1")) == 2
 
-    def test_delete_l3_memory(self, storage: MemoryStorage) -> None:
-        memory_id = storage.add_l3_memory("user1", "Important")
-        result = storage.delete_l3_memory("user1", memory_id)
-        assert result is True
-        assert len(storage.get_l3_memories("user1")) == 0
-
-    # Session
-    # ================================================================
-
-    def test_get_active_dialogue(self, storage: MemoryStorage) -> None:
-        storage.append_dialogue("user1", "user", "Hello")
-        dialogues = storage.get_active_dialogue("user1")
-        assert len(dialogues) == 1
-
-    def test_get_all_users(self, storage: MemoryStorage) -> None:
-        storage.append_dialogue("user1", "user", "Hi")
-        storage.append_dialogue("user2", "user", "Hey")
-        users = storage.get_all_users()
-        assert "user1" in users
-        assert "user2" in users

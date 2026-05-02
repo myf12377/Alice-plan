@@ -29,7 +29,7 @@ async def start(self) -> None: ...
 | 时间 | 方法 | 操作 |
 |------|------|------|
 | 01:00 | `_compress_daily()` | Storage(L1)→Compressor→Storage(L2) |
-| 02:00 | `_l1_cleanup()` | Storage.trim_to_recent_rounds(l1_save_rounds) |
+| 02:00 | `_l1_cleanup()` | Storage.trim_to_recent_rounds(l1_save_rounds) + Storage.delete_old_summaries(ttl=7) |
 | 03:00 | `_l3_maintenance()` | VectorStore.apply_decay→get_gray→Analyzer.batch_recheck |
 | 04:00 | `_compress_context()` | Storage(L1+L2+周)→Compressor(内部写入周摘要) |
 | 周一05:00 | `_reset_weekly()` | Storage.clear_weekly_summary |

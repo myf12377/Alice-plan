@@ -227,16 +227,6 @@ class VectorStore:
                 )
         return memories
 
-    def delete_user_memories(self, user_id: str) -> int:
-        """删除用户全部记忆。返回删除数。"""
-        if not self._ensure_collection():
-            return 0
-        memories = self.get_user_memories(user_id)
-        count = len(memories)
-        if count > 0:
-            self._collection.delete(where={"user_id": user_id})
-        return count
-
     def update_metadata(self, vector_id: str, metadata: dict[str, Any]) -> bool:
         """更新记忆元数据（合并到现有元数据）。"""
         if not self._ensure_collection():
@@ -358,59 +348,6 @@ class VectorStore:
     # 相似度 & 合并
     # ==================================================================
 
-    def find_similar(
-        self,
-        user_id: str,
-        embedding: list[float],
-        threshold: float,
-    ) -> list[dict[str, Any]]:
-        """查找与给定向量相似的用户记忆。
-
-        Args:
-            user_id: 用户标识符。
-            embedding: 查询向量。
-            threshold: 余弦相似度阈值（如 0.9）。
-
-        Returns:
-            相似度 ≥ threshold 的记忆列表（按相似度降序）。
-        """
-        if not self._ensure_collection():
-            return []
-        if not embedding:
-            return []
-        total = self._collection.count()
-        if total == 0:
-            return []
-
-        results = self._collection.query(
-            query_embeddings=[embedding],
-            n_results=min(20, total),
-            where={"user_id": user_id},
-        )
-
-        similar: list[dict[str, Any]] = []
-        if results["ids"] and results["ids"][0]:
-            for i, vid in enumerate(results["ids"][0]):
-                distance = results["distances"][0][i] if results["distances"] else 1.0
-                # ChromaDB cosine: distance = 1 - similarity
-                similarity = 1.0 - distance
-                if similarity >= threshold:
-                    similar.append(
-                        {
-                            "id": vid,
-                            "content": results["documents"][0][i]
-                            if results["documents"]
-                            else "",
-                            "metadata": results["metadatas"][0][i]
-                            if results["metadatas"]
-                            else {},
-                            "similarity": round(similarity, 4),
-                        }
-                    )
-
-        similar.sort(key=lambda x: x["similarity"], reverse=True)
-        return similar
-
     async def find_similar_by_content(
         self,
         user_id: str,
@@ -531,19 +468,6 @@ class VectorStore:
     # ==================================================================
     # 工具
     # ==================================================================
-
-    def get_all_users(self) -> list[str]:
-        """获取所有在 ChromaDB 中有数据的用户 ID（去重排序）。"""
-        if not self._ensure_collection():
-            return []
-        results = self._collection.get()
-        users: set[str] = set()
-        if results["metadatas"]:
-            for meta in results["metadatas"]:
-                uid = meta.get("user_id", "")
-                if uid:
-                    users.add(uid)
-        return sorted(users)
 
     def close(self) -> None:
         """关闭向量存储连接。"""

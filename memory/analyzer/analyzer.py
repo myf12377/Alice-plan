@@ -43,11 +43,6 @@ class ImportanceAnalyzer:
         response = await self._call_llm(prompt, umo)
         return self._parse_score(response)
 
-    async def should_promote_to_l3(self, content: str) -> bool:
-        """分数 ≥ importance_threshold → True。"""
-        score = await self.analyze(content)
-        return score >= self._config.importance_threshold
-
     # ==================================================================
     # 灰区批量重评
     # ==================================================================

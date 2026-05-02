@@ -251,11 +251,6 @@ class PluginConfig(BaseModel):
     # ==========================================================================
 
     @classmethod
-    def defaults(cls) -> "PluginConfig":
-        """返回全部默认的配置实例。"""
-        return cls()
-
-    @classmethod
     def from_framework_config(cls, raw: dict[str, Any]) -> "PluginConfig":
         """从 AstrBot 框架传入的 AstrBotConfig(dict) 构造 PluginConfig。
 
@@ -264,10 +259,6 @@ class PluginConfig(BaseModel):
         valid_keys = set(cls.model_fields.keys())
         filtered = {k: v for k, v in raw.items() if k in valid_keys}
         return cls(**filtered)
-
-    def to_dict(self) -> dict[str, Any]:
-        """导出为纯 dict，用于持久化或写回框架。Path 转为字符串。"""
-        return self.model_dump(mode="json")
 
     def model_post_init(self, __context: Any) -> None:
         """Pydantic 初始化后钩子：确保数据目录存在 + 约束校验。"""

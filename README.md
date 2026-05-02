@@ -1,4 +1,4 @@
-# AstrBot Alice Memory Plugin v2.2.0
+# AstrBot Alice Memory Plugin v2.3.0
 
 AstrBot 三层记忆插件 — 让 AI 拥有类人记忆：短期对话、中期概括、长期沉淀。
 
@@ -110,7 +110,7 @@ effective_score = importance × 0.995^days + min(access_count, 10) × 0.3
 | 时间 | 任务 |
 |------|------|
 | 01:00 | Path B 日压缩：L1 昨日对话 → L2 日摘要 |
-| 02:00 | L1 裁剪：保留最近 200 轮，删除超出部分 |
+| 02:00 | L1 裁剪 + L2 日摘要清理：保留最近 200 轮 L1 + 删除 7 天前 L2 日摘要 |
 | 03:00 | L3 维护：衰减计算 + 灰区重评 + 低分删除 |
 | 04:00 | Path A 周压缩：合并生成渐进周摘要 |
 | 周一 05:00 | 周摘要重置 |
@@ -128,8 +128,6 @@ effective_score = importance × 0.995^days + min(access_count, 10) × 0.3
 ├── weekly/{uid}.json     # 周摘要持久化
 └── chroma/               # ChromaDB 向量库
 ```
-
-通过 MigrationModule 可进行完整备份/还原，以及 `.astrmem` 和 ChromaDB 格式的导出/导入。
 
 ### 跨设备记忆迁移
 
@@ -152,6 +150,20 @@ effective_score = importance × 0.995^days + min(access_count, 10) × 0.3
 MIT
 
 ## 更新日志
+
+### v2.3.0（2026-05-02）
+
+**清理：**
+- 删除 17 个未调用方法（storage 7 个 / analyzer 1 个 / vector_store 3 个 / identity 3 个 / plugin_config 2 个）
+- 删除 L1MemoryItem 3 个死字段（`compressed` / `content_type` / `media_url`）
+- 删除未接入的 MigrationModule 模块
+- 删除对应死方法的测试用例
+
+**新增：**
+- Scheduler 02:00 追加 L2 日摘要 7 天自动清理，防止 `l2/{user_id}.json` 无限膨胀
+
+**文档：**
+- 同步更新 8 个文档文件，移除已删除 API 和模块引用
 
 ### v2.2.1（2026-05-02）
 

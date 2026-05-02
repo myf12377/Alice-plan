@@ -12,9 +12,9 @@ desc: |
   - 三管线注入: L1（全量分组）/ L2（去重合并）/ L3（按需检索）
   - 自然遗忘曲线: 衰减公式 effective = importance × 0.995^days + 访问加成
   - 手动压缩: /compact 命令支持 Path A/B 压缩
-  - 数据迁移: 支持 .astrmem 和 ChromaDB 导出/导入
+  - L2 日摘要自动清理: 02:00 定时清理 7 天前日摘要
 author: Alice
-version: 2.2.1
+version: 2.3.0
 astrbot_version: ">=4.16"
 support_platforms:
   - qq_official

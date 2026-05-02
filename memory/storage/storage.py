@@ -36,9 +36,6 @@ class L1MemoryItem:
         role: 角色（user / assistant）。
         content: 对话内容。
         timestamp: Unix 时间戳。
-        compressed: 是否已被压缩为 L2 摘要。
-        content_type: 内容类型（text / image / audio）。
-        media_url: 原始媒体 URL。
     """
 
     message_id: str
@@ -46,9 +43,6 @@ class L1MemoryItem:
     role: str
     content: str
     timestamp: float
-    compressed: bool = False
-    content_type: str = "text"
-    media_url: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -57,9 +51,6 @@ class L1MemoryItem:
             "role": self.role,
             "content": self.content,
             "timestamp": self.timestamp,
-            "compressed": self.compressed,
-            "content_type": self.content_type,
-            "media_url": self.media_url,
         }
 
     @classmethod
@@ -70,9 +61,6 @@ class L1MemoryItem:
             role=data["role"],
             content=data["content"],
             timestamp=data["timestamp"],
-            compressed=data.get("compressed", False),
-            content_type=data.get("content_type", "text"),
-            media_url=data.get("media_url"),
         )
 
 
@@ -271,29 +259,13 @@ class MemoryStorage:
             items = [i for i in items if _ts_to_date(i.timestamp) == date]
         return items
 
-    def get_today_dialogues(self, user_id: str) -> list[L1MemoryItem]:
-        """获取用户当日 L1 对话。"""
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        return self.get_l1_dialogues(user_id, date=today)
-
-    def delete_l1_dialogue(self, user_id: str, message_id: str) -> bool:
-        """按 message_id 删除单条 L1 对话。"""
-        path = self._get_l1_path(user_id)
-        data = self._load_json(path)
-        original_len = len(data)
-        data = [d for d in data if d.get("message_id") != message_id]
-        if len(data) < original_len:
-            self._save_json(path, data)
-            return True
-        return False
-
     def update_l1_dialogue_timestamp(
         self,
         user_id: str,
         message_id: str,
         timestamp: float,
     ) -> bool:
-        """更新单条 L1 对话的时间戳（供测试用）。"""
+        """更新单条 L1 对话的时间戳（测试工具）。"""
         path = self._get_l1_path(user_id)
         data = self._load_json(path)
         for item in data:
@@ -302,54 +274,6 @@ class MemoryStorage:
                 self._save_json(path, data)
                 return True
         return False
-
-    def delete_old_l1_dialogues(
-        self,
-        user_id: str,
-        retention_days: int | None = None,
-    ) -> int:
-        """删除超过保留天数的 L1 对话。
-
-        Args:
-            user_id: 用户标识符。
-            retention_days: 保留天数，为 None 使用 config.l1_retention_days。
-
-        Returns:
-            删除的条目数。
-        """
-        if retention_days is None:
-            retention_days = self._config.l1_retention_days
-        cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
-        cutoff_ts = cutoff.timestamp()
-        path = self._get_l1_path(user_id)
-        data = self._load_json(path)
-        original_len = len(data)
-        data = [d for d in data if d.get("timestamp", 0) >= cutoff_ts]
-        removed = original_len - len(data)
-        if removed > 0:
-            self._save_json(path, data)
-        return removed
-
-    def mark_dialogues_compressed(
-        self,
-        user_id: str,
-        before_ts: float,
-    ) -> int:
-        """将指定时间之前的对话标记为已压缩。
-
-        Returns:
-            标记的条目数。
-        """
-        path = self._get_l1_path(user_id)
-        data = self._load_json(path)
-        count = 0
-        for d in data:
-            if d.get("timestamp", 0) < before_ts and not d.get("compressed", False):
-                d["compressed"] = True
-                count += 1
-        if count > 0:
-            self._save_json(path, data)
-        return count
 
     def _load_all_l1(self, user_id: str) -> list[L1MemoryItem]:
         path = self._get_l1_path(user_id)
@@ -524,18 +448,6 @@ class MemoryStorage:
             items = items[:last]
         return items
 
-    def get_l2_summaries_for_date(
-        self,
-        date: str,
-    ) -> list[L2SummaryItem]:
-        """按日期查询 L2 摘要（跨用户，用于调度器遍历）。"""
-        results: list[L2SummaryItem] = []
-        for f in self._l2_dir.glob("*.json"):
-            for d in self._load_json(f):
-                if d.get("date") == date:
-                    results.append(L2SummaryItem.from_dict(d))
-        return results
-
     def delete_old_summaries(
         self,
         user_id: str,
@@ -651,25 +563,6 @@ class MemoryStorage:
         """获取用户全部 L3 记忆元数据。"""
         path = self._get_l3_path(user_id)
         return [L3MemoryItem.from_dict(d) for d in self._load_json(path)]
-
-    def delete_l3_memory(self, user_id: str, memory_id: str) -> bool:
-        """按 memory_id 删除 L3 记忆。"""
-        path = self._get_l3_path(user_id)
-        data = self._load_json(path)
-        original_len = len(data)
-        data = [d for d in data if d.get("memory_id") != memory_id]
-        if len(data) < original_len:
-            self._save_json(path, data)
-            return True
-        return False
-
-    # ==================================================================
-    # Session
-    # ==================================================================
-
-    def get_active_dialogue(self, user_id: str) -> list[L1MemoryItem]:
-        """获取用户活跃对话（委托给 get_l1_dialogues）。"""
-        return self.get_l1_dialogues(user_id)
 
     # ==================================================================
     # 工具

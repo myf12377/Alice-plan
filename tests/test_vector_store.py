@@ -98,13 +98,6 @@ class TestVectorStore:
     def test_delete_memory_not_found(self, vector_store: VectorStore) -> None:
         assert vector_store.delete_memory("nonexistent-id") is False
 
-    async def test_delete_user_memories(self, vector_store: VectorStore) -> None:
-        await vector_store.add_memory("user1", "Memory 1")
-        await vector_store.add_memory("user1", "Memory 2")
-        count = vector_store.delete_user_memories("user1")
-        assert count == 2
-        assert len(vector_store.get_user_memories("user1")) == 0
-
     async def test_update_metadata(self, vector_store: VectorStore) -> None:
         memory_id = await vector_store.add_memory("user1", "Test content")
         result = vector_store.update_metadata(memory_id, {"new_key": "new_value"})
@@ -153,10 +146,6 @@ class TestVectorStore:
     # 相似度 & 合并
     # ================================================================
 
-    def test_find_similar_empty(self, vector_store: VectorStore) -> None:
-        result = vector_store.find_similar("user1", [0.1] * 128, 0.9)
-        assert result == []
-
     async def test_find_similar_by_content_empty(
         self,
         vector_store: VectorStore,
@@ -172,13 +161,6 @@ class TestVectorStore:
     ) -> None:
         result = await vector_store.find_similar_by_content("user1", "", 0.9)
         assert result == []
-
-    async def test_get_all_users(self, vector_store: VectorStore) -> None:
-        await vector_store.add_memory("user_a", "A")
-        await vector_store.add_memory("user_b", "B")
-        users = vector_store.get_all_users()
-        assert "user_a" in users
-        assert "user_b" in users
 
     def test_close(self, vector_store: VectorStore) -> None:
         vector_store.close()
