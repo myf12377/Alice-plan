@@ -1,4 +1,4 @@
-# AstrBot Alice Memory Plugin v2.3.0
+# AstrBot Alice Memory Plugin v2.3.1
 
 AstrBot 三层记忆插件 — 让 AI 拥有类人记忆：短期对话、中期概括、长期沉淀。
 
