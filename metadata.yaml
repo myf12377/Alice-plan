@@ -1,7 +1,7 @@
 name: astrbot_alice_memory_tier
 display_name: Alice Memory
 desc: |
-  Alice 三层记忆系统 v3.0 — 类人记忆管理插件，为主动层提供完整记忆后端。
+  Alice 三层记忆系统 v3.1.1 — 类人记忆管理插件，为主动层提供完整记忆后端。
 
   记忆层次:
   - L1 短期记忆: 轮次滑窗（200轮保留），按日期分组注入上下文
@@ -16,6 +16,7 @@ desc: |
   - 压缩身份修复: Path A/B prompt 移除角色分配，避免 "记忆合并助手" 泄漏到摘要
   - L3 合并阈值从 0.75 调整为 0.60，适配中文短句
   - 双写防丢失: ChromaDB 向量库 + l3/{uid}.json 持久化备份
+  - ChromaDB collection 恢复增强: get(limit=1) 验证 + count()>0 数据检查
 
   主动层对接:
   - 6 个 @property（storage / vector_store / identity / injector / compressor / analyzer）
@@ -30,7 +31,7 @@ desc: |
   - /l3_stats — 查看 L3 状态
   - /forget <ID> — 删除 L3 记忆
 author: Alice
-version: 3.1.0
+version: 3.1.1
 astrbot_version: ">=4.16"
 support_platforms:
   - qq_official

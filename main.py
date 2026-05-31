@@ -241,13 +241,11 @@ class AliceMemoryPlugin(Star):
         # =====================================================================
         # Scheduler 向 AstrBot CronJobManager 注册 6 项 cron 任务。
         # add_basic_job 是协程，需 create_task 延迟调度（同 _recover_l3_from_json 模式）。
-        import asyncio as _asyncio
-        _loop = _asyncio.get_event_loop()
         self._scheduler = Scheduler(
             context, self._storage, self._identity, self._vector_store,
             self.plugin_config, self._compressor, self._analyzer,
         )
-        self._scheduler_start_task = _loop.create_task(self._scheduler.start())
+        self._scheduler.start()
         logger.info("[AliceMemory] 定时调度就绪 | Scheduler ✓")
 
         # ---- 延迟恢复: JSON → ChromaDB ----
