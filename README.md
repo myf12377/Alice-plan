@@ -1,4 +1,4 @@
-# AstrBot Alice Memory Tier v3.0
+# AstrBot Alice Memory Tier v3.1.0
 
 AstrBot 三层记忆插件 — 为主动层/中间层提供完整的类人记忆后端。
 
