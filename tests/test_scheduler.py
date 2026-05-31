@@ -42,7 +42,7 @@ class TestScheduler:
     def mock_context(self) -> MagicMock:
         context = MagicMock()
         context.cron_manager = MagicMock()
-        context.cron_manager.add_basic_job = MagicMock()
+        context.cron_manager.add_basic_job = AsyncMock()
         return context
 
     @pytest.fixture
@@ -79,20 +79,22 @@ class TestScheduler:
     # 注册
     # ================================================================
 
-    def test_start_registers_6_tasks(
+    @pytest.mark.asyncio
+    async def test_start_registers_6_tasks(
         self, scheduler: Scheduler, mock_context: MagicMock,
     ) -> None:
-        scheduler.start()
+        await scheduler.start()
         assert mock_context.cron_manager.add_basic_job.call_count == 6
 
-    def test_start_no_cron_manager(
+    @pytest.mark.asyncio
+    async def test_start_no_cron_manager(
         self, storage, identity_module, config, mock_compressor, mock_analyzer,
     ) -> None:
         mock_ctx = MagicMock()
         mock_ctx.cron_manager = None
         s = Scheduler(mock_ctx, storage, identity_module, None, config,
                        mock_compressor, mock_analyzer)
-        s.start()  # 静默返回，不抛异常
+        await s.start()  # 静默返回，不抛异常
 
     # Path B 日压缩
     # ================================================================

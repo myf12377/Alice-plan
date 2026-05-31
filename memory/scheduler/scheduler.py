@@ -79,7 +79,7 @@ class Scheduler:
     # 注册入口
     # ==================================================================
 
-    def start(self) -> None:
+    async def start(self) -> None:
         """向 AstrBot CronJobManager 注册 6 项定时任务。"""
         cron_manager = getattr(self._context, "cron_manager", None)
         if cron_manager is None:
@@ -102,7 +102,7 @@ class Scheduler:
             (merge_cron,     self._safe_wrap(self._l3_merge),        "L3 合并"),
         ]
         for i, (cron, handler, desc) in enumerate(jobs):
-            cron_manager.add_basic_job(
+            await cron_manager.add_basic_job(
                 name=f"AliceMemory_{desc.replace(' ', '_')}",
                 cron_expression=cron,
                 handler=handler,

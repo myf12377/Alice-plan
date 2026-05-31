@@ -57,7 +57,8 @@ class PluginConfig(BaseModel):
     l2_path_a_enabled: bool = Field(default=True, description="Path A 开关")
     l2_compress_prompt_a: str = Field(
         default=(
-            "你是一个记忆合并助手。以下包含：\n"
+            "请将以下内容融合为一份本周的最新摘要。\n\n"
+            "以下包含：\n"
             "1) 已有的本周摘要（可能为空）\n"
             "2) 今日的对话记录\n"
             "3) 近几日的每日摘要\n\n"
@@ -81,7 +82,7 @@ class PluginConfig(BaseModel):
     l2_path_b_enabled: bool = Field(default=True, description="Path B 开关")
     l2_compress_prompt_b: str = Field(
         default=(
-            "你是一个对话摘要助手。请将以下昨日对话提炼为一份日摘要。\n\n"
+            "请将以下对话内容提炼为一份日摘要。\n\n"
             "要求：\n"
             "- 提取关键事件和重要信息\n"
             "- 保留用户的偏好、习惯、情感表达方式\n"
@@ -145,7 +146,7 @@ class PluginConfig(BaseModel):
         description="L3 检索相似度阈值（换模型后自动校准，可手动覆盖）",
     )
     l3_merge_similarity: float = Field(
-        default=0.75, ge=0.0, le=1.0,
+        default=0.60, ge=0.0, le=1.0,
         description="L3 记忆合并相似度阈值（固定值，不受自校准影响）",
     )
     l3_search_count: int = Field(

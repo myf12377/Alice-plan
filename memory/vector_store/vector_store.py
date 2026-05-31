@@ -73,30 +73,31 @@ class VectorStore:
         self._check_migration()
 
     def _ensure_cosine_collection(self) -> None:
-        """确保 collection 使用 cosine 距离度量且有 embedding_dim 标记。
+        """确保 collection 使用 cosine 距离度量。
 
         ChromaDB 默认 l2 距离，但代码中 similarity = 1.0 - distance
-        仅对 cosine 距离有效。若现有 collection 非 cosine 或缺少
-        embedding_dim（P14 前创建的旧集合），删掉重建。
+        仅对 cosine 距离有效。若现有 collection 非 cosine，删掉重建。
+
+        注意：ChromaDB 不允许 modify() 包含 hnsw:space 字段，
+        因此 embedding_dim 无法通过 modify 持久化。
+        改为用 count>0 判断 collection 是否有有效数据，
+        有数据则保留（即使缺少 embedding_dim 元数据）。
         数据由 P11 的 _recover_l3_from_json 从 l3/{uid}.json 恢复。
         """
         desired_space = "cosine"
         try:
             existing = self._client.get_collection(name=self._collection_name)
             existing_space = existing.metadata.get("hnsw:space", "")
-            has_dim = bool(existing.metadata.get("embedding_dim", ""))
+            has_data = existing.count() > 0
             if existing_space == desired_space:
-                # 外部 provider 必须有 embedding_dim 以支持维度变化检测
-                # 内置 ChromaDB collection (embedding_func=None) 不需要
-                if self._embedding_func is None or has_dim:
+                # 有数据或内置 embedding_func 时直接使用
+                # ChromaDB 不支持 modify 携带 hnsw:space，因此不再
+                # 依赖 embedding_dim 元数据做维度变化检测
+                if self._embedding_func is None or has_data:
                     self._collection = existing
                     return
-            # 距离度量不匹配 或 旧 collection 缺少 embedding_dim → 删除重建
-            if not has_dim:
-                logger.info(
-                    "[AliceMemory] 旧 collection 缺少 embedding_dim，删除重建以确保维度一致"
-                )
-            else:
+            # 距离度量不匹配 或 空 collection 有外部 provider → 删除重建
+            if existing_space != desired_space:
                 logger.info(
                     "[AliceMemory] 距离度量不匹配 | current=%s → desired=%s | 删除旧 collection 重建",
                     existing_space or "l2(default)", desired_space,
@@ -110,7 +111,6 @@ class VectorStore:
             metadata={
                 "description": "AstrBot L3 memory storage",
                 "hnsw:space": desired_space,
-                "embedding_dim": "",  # 首次嵌入调用时填入实际维度
             },
         )
 
@@ -190,17 +190,17 @@ class VectorStore:
         return result
 
     async def _track_embedding_dim(self, actual_dim: int) -> None:
-        """记录嵌入维度；若与 collection 记录不符则删除重建（JSON 恢复兜底）。"""
+        """记录嵌入维度，会话内维度变化时触发重建。
+
+        ChromaDB 不允许 modify() 同时传入 hnsw:space，
+        因此 embedding_dim 改为内存级追踪（非持久化）。
+        重启后由 _ensure_cosine_collection 的 count>0 逻辑保护，
+        避免误删有数据的 collection。
+        """
         meta = self._collection.metadata or {}
         stored = meta.get("embedding_dim", "")
         if not stored:
-            # 首次嵌入 → 记录维度
-            try:
-                self._collection.modify(
-                    metadata={**meta, "embedding_dim": str(actual_dim)},
-                )
-            except Exception:
-                pass
+            # ChromaDB 不支持 modify 同时携带 hnsw:space，跳过持久化
             return
         try:
             stored_dim = int(stored)
@@ -305,8 +305,70 @@ class VectorStore:
         return datetime.now(timezone.utc).isoformat()
 
     def _ensure_collection(self) -> bool:
+        """验证 collection 可访问，失效时自动恢复。
+
+        仅检查 self._collection is None 不够 — ChromaDB PersistentClient
+        可能持有已删除 segment 的僵尸引用（目录被删除但 SQLite 未清理）。
+        此处以轻量 get(limit=1) 验证引用有效（需实际访问 segment），
+        失败则尝试重建。
+        """
         if self._collection is None:
             return False
+        try:
+            self._collection.get(limit=1)
+            return True
+        except Exception:
+            logger.warning("[AliceMemory] Collection 引用失效，尝试恢复...")
+            return self._try_recover_collection()
+
+    def _try_recover_collection(self) -> bool:
+        """尝试恢复失效的 ChromaDB collection 引用。
+
+        策略：
+        1. 尝试按名称重新获取（可能被其他进程重建）
+        2. 删除僵尸 catalog 条目，重建空 collection
+        3. 通知外部通过 JSON 恢复数据（_on_collection_rebuilt）
+        """
+        # 方案 1：重新获取
+        try:
+            self._collection = self._client.get_collection(
+                name=self._collection_name,
+            )
+            self._collection.get(limit=1)
+            logger.info("[AliceMemory] Collection 恢复成功（重新获取）")
+            return True
+        except Exception:
+            pass
+
+        # 方案 2：删除僵尸引用，重建新 collection
+        try:
+            self._client.delete_collection(self._collection_name)
+        except Exception:
+            pass
+
+        try:
+            self._collection = self._client.create_collection(
+                name=self._collection_name,
+                metadata={
+                    "description": "AstrBot L3 memory storage",
+                    "hnsw:space": "cosine",
+                    "embedding_dim": "",
+                },
+            )
+            logger.info("[AliceMemory] Collection 恢复成功（重建）| 触发 JSON 恢复")
+        except Exception as e:
+            logger.error("[AliceMemory] Collection 重建失败: %s", e)
+            self._collection = None
+            return False
+
+        # 通知外部从 JSON 恢复数据（非阻塞）
+        if self._on_collection_rebuilt:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(self._on_collection_rebuilt())
+            except Exception:
+                pass
         return True
 
     # ==================================================================
@@ -630,38 +692,46 @@ class VectorStore:
         for m1 in memories:
             if m1["id"] in consumed:
                 continue
-            similar = await self.search(user_id, m1["content"], top_k=5)
-            for s in similar:
-                if s["id"] in consumed or s["id"] == m1["id"]:
-                    continue
-                distance = s.get("distance", 1.0)
-                if 1.0 - distance < threshold:
-                    continue
-                merged = await analyzer.merge_content(
-                    m1["content"], s["content"],
+            similar = await self.search(user_id, m1["content"], top_k=self._config.l3_search_count)
+            # 收集所有 ≥ 阈值的候选项，按重要性降序排列
+            candidates = [
+                s for s in similar
+                if s["id"] not in consumed and s["id"] != m1["id"]
+                and (1.0 - s.get("distance", 1.0)) >= threshold
+            ]
+            if not candidates:
+                continue
+            candidates.sort(
+                key=lambda m: m["metadata"].get("importance", 0),
+                reverse=True,
+            )
+            # 多候选合并：以 m1 为核心，逐一合并所有候选项
+            merged_content = m1["content"]
+            merged_score = m1["metadata"].get("importance", 0)
+            all_old_ids: list[str] = []
+            for secondary in candidates:
+                merged = await analyzer.merge_content(merged_content, secondary["content"])
+                if merged:
+                    merged_content = merged
+                merged_score = min(
+                    max(merged_score, secondary["metadata"].get("importance", 0)) + 0.5,
+                    10.0,
                 )
-                if not merged:
-                    continue
-                new_score = min(
-                    max(
-                        m1["metadata"].get("importance", 0),
-                        s["metadata"].get("importance", 0),
-                    ) + 0.5,
-                    10.0,  # P19 上限
-                )
-                new_id, old_ids = await self.merge_memories(
-                    m1["id"], s["id"], merged, new_score,
+                all_old_ids.append(secondary["id"])
+                consumed.add(secondary["id"])
+            if all_old_ids:
+                all_old_ids.append(m1["id"])
+                new_id = await self._merge_many(
+                    all_old_ids, user_id, merged_content, merged_score,
                 )
                 merge_details.append({
-                    "old_ids": old_ids,
-                    "content": merged,
-                    "score": new_score,
+                    "old_ids": all_old_ids,
+                    "content": merged_content,
+                    "score": merged_score,
                     "new_vector_id": new_id,
                 })
                 consumed.add(m1["id"])
-                consumed.add(s["id"])
                 merged_count += 1
-                break
 
         return merged_count, merge_details
 
@@ -765,14 +835,58 @@ class VectorStore:
         )
         return new_id, [vid1, vid2]  # P21 返回旧 ID 供调用方同步 JSON
 
+    async def _merge_many(
+        self, old_ids: list[str], user_id: str,
+        merged_content: str, new_score: float,
+    ) -> str:
+        """批量合并：删 N 条旧记忆，建 1 条新记忆。
+
+        add_or_merge 多候选项合并时使用，替代多次两两 merge_memories 调用。
+        """
+        if not old_ids:
+            return str(uuid.uuid4())
+
+        # 删除所有旧条目
+        try:
+            self._collection.delete(ids=old_ids)
+        except Exception:
+            pass
+
+        # 创建新条目
+        new_id = str(uuid.uuid4())
+        now = self._now_iso()
+        new_metadata = {
+            "user_id": user_id,
+            "content": merged_content,
+            "created_at": now,
+            "last_accessed_at": now,
+            "access_count": 0,
+            "importance": new_score,
+            "merged_from": old_ids,
+        }
+
+        vector: list[float] | None = None
+        if self._embedding_func:
+            vectors = await self._call_embedding_func_async([merged_content])
+            vector = vectors[0] if vectors else None
+
+        self._collection.add(
+            ids=[new_id],
+            documents=[merged_content],
+            metadatas=[new_metadata],
+            embeddings=[vector] if vector else None,
+        )
+        return new_id
+
     # P21：写入前去重 — 供 /important 和 L3 晋升使用
     async def add_or_merge(
         self, user_id: str, content: str, score: float,
         analyzer: Any, merge_threshold: float,
     ) -> dict[str, Any]:
-        """写入前去重：相似度高则合并，否则新增。
+        """写入前去重：与所有 ≥ 阈值的相似记忆合并为一条。
 
-        流程：嵌入新内容 → 查找相似记忆 → 有则先暂存再合并，无则直接存。
+        流程：嵌入新内容 → 查找相似记忆 → 收集所有候选项
+        → 暂存新内容 → 按重要性降序逐一合并 → 删旧建新。
 
         Returns:
             {"action": "added"|"merged", "vector_id": str,
@@ -788,20 +902,46 @@ class VectorStore:
             vid = await self.add_memory(user_id, content, {"importance": score})
             return {"action": "added", "vector_id": vid,
                     "merged_content": content, "new_score": score, "old_ids": []}
-        # 有相似记忆 → 先暂存新内容，再与相似条目合并
-        best = similar[0]
+
+        # 收集所有 ≥ 阈值的候选项，按重要性降序
+        # 高重要性记忆优先作为核心合并目标，后续候选项依次融入
+        similar.sort(
+            key=lambda m: m["metadata"].get("importance", 0),
+            reverse=True,
+        )
+
+        # 暂存新内容
         temp_id = await self.add_memory(user_id, content, {"importance": score})
-        merged = await analyzer.merge_content(best["content"], content)
-        merged_content = merged if merged else content
-        new_score = min(
-            max(best["metadata"].get("importance", 0), score) + 0.5, 10.0,
+
+        # 以最高重要性候选项为起点，逐一合并所有候选项
+        primary = similar[0]
+        merged_content = await analyzer.merge_content(primary["content"], content)
+        merged_content = merged_content if merged_content else content
+        merged_score = min(
+            max(primary["metadata"].get("importance", 0), score) + 0.5, 10.0,
         )
-        new_id, old_ids = await self.merge_memories(
-            best["id"], temp_id, merged_content, new_score,
-        )
+        all_old_ids = [primary["id"]]
+
+        for secondary in similar[1:]:
+            merged = await analyzer.merge_content(merged_content, secondary["content"])
+            if merged:
+                merged_content = merged
+            merged_score = min(
+                max(
+                    merged_score,
+                    secondary["metadata"].get("importance", 0),
+                ) + 0.5,
+                10.0,
+            )
+            all_old_ids.append(secondary["id"])
+
+        # 删除所有旧条目（含暂存），创建合并条目
+        all_old_ids.append(temp_id)
+        new_id = await self._merge_many(all_old_ids, user_id, merged_content, merged_score)
+
         return {"action": "merged", "vector_id": new_id,
-                "merged_content": merged_content, "new_score": new_score,
-                "old_ids": old_ids}
+                "merged_content": merged_content, "new_score": merged_score,
+                "old_ids": all_old_ids}
 
     # ==================================================================
     # 工具
