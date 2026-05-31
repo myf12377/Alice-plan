@@ -115,7 +115,7 @@ results = await plugin.vector_store.search(uid, query)
 | 通用 | `data_dir`、`hook_enabled`、`manage_context` |
 | L1 | `l1_enabled`、`l1_save_rounds`(200)、`l1_inject_rounds`(80) |
 | L2 | Path A/B 独立开关、`l2_ttl`(7)、`l2_daily_inject_count`(3) |
-| L3 | `l3_enabled`、`l3_embedding_provider`(auto)、`l3_search_similarity`(0.4/检索)、`l3_merge_similarity`(0.75/合并)、`l3_search_count`(5) |
+| L3 | `l3_enabled`、`l3_embedding_provider`(auto)、`l3_search_similarity`(0.4/检索)、`l3_merge_similarity`(0.60/合并)、`l3_search_count`(5) |
 | LLM | `compress_model`、`importance_analyze_model`、`llm_max_tokens`(1024) |
 | 注入 | `inject_l1`、`inject_l2_path_a`、`inject_l2_path_b`、`inject_l3` |
 
