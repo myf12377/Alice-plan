@@ -251,6 +251,8 @@ class AliceMemoryPlugin(Star):
         # ---- 延迟恢复: JSON → ChromaDB ----
         # 若 l3/{uid}.json 有数据但 ChromaDB 为空，从 JSON 重建向量索引。
         # create_task 延迟执行，等待 ProviderManager 初始化完毕。
+        import asyncio as _asyncio
+        _loop = _asyncio.get_event_loop()
         _loop.create_task(self._recover_l3_from_json())
 
         logger.info("[AliceMemory] 插件初始化完成")
