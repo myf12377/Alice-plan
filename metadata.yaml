@@ -12,8 +12,9 @@ desc: |
   - 三管线独立注入: L1 → contexts（按日期分组）/ L2 → extra（周+日分层）/ L3 → extra（语义检索）
   - 嵌入模型自由切换: 支持 auto / 自定义模型名，维度变化自动检测+重建（JSON 备份防丢失）
   - 相似度自校准: 换模型后自动计算建议阈值，检索/合并阈值独立配置
-  - 写入去重: /important 和 L3 晋升前自动检测相似记忆并合并
-  - 自然遗忘: 衰减公式 effective = importance × 0.995^days + 访问加成
+  - 写入去重: /important 和 L3 晋升前自动检测相似记忆并合并（多候选项合并）
+  - 压缩身份修复: Path A/B prompt 移除角色分配，避免 "记忆合并助手" 泄漏到摘要
+  - L3 合并阈值从 0.75 调整为 0.60，适配中文短句
   - 双写防丢失: ChromaDB 向量库 + l3/{uid}.json 持久化备份
 
   主动层对接:
@@ -29,7 +30,7 @@ desc: |
   - /l3_stats — 查看 L3 状态
   - /forget <ID> — 删除 L3 记忆
 author: Alice
-version: 3.0.0
+version: 3.1.0
 astrbot_version: ">=4.16"
 support_platforms:
   - qq_official
