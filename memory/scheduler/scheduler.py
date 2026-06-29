@@ -1,8 +1,8 @@
 """
-调度器模块 — 5 段定时任务编排。
+调度器模块 — 7 段定时任务编排。
 
-01:00 Path B 日压缩 / 02:00 L1 清理 / 03:00 L3 衰减+灰区重评
-04:00 Path A 周压缩 / 周一 05:00 周摘要重置
+01:00 Path B 日压缩 / 01:30 L2 TTL 清理 / 02:00 L1 清理 / 03:00 L3 衰减+灰区重评
+04:00 Path A 周压缩（含周摘要周一检测+过期检测） / 周一 05:00 周摘要重置（冗余）
 """
 
 from __future__ import annotations
@@ -95,6 +95,7 @@ class Scheduler:
 
         jobs = [
             ("0 1 * * *",   self._safe_wrap(self._compress_daily),  "Path B 日压缩"),
+            ("30 1 * * *",  self._safe_wrap(self._l2_ttl_cleanup),  "L2 TTL清理"),
             ("0 2 * * *",   self._safe_wrap(self._l1_cleanup),      "L1 轮次裁剪"),
             ("0 3 * * *",   self._safe_wrap(self._l3_maintenance),  "L3 衰减+灰区重评"),
             ("0 4 * * *",   self._safe_wrap(self._compress_context), "Path A 周压缩"),
@@ -202,6 +203,25 @@ class Scheduler:
             logger.error("[AliceMemory] L3 维护异常", exc_info=True)
 
     # ==================================================================
+    # 01:30 — L2 TTL 清理
+    # ==================================================================
+
+    async def _l2_ttl_cleanup(self) -> None:
+        """删除超过 TTL 的 L2 日摘要，防止磁盘持续膨胀。"""
+        if not self._config.l2_path_b_enabled:
+            return
+        try:
+            for uid in self._identity_module.get_all_users():
+                removed = self._storage.delete_old_summaries(uid)
+                if removed:
+                    logger.info(
+                        "[AliceMemory] L2 TTL 清理 | uid=%s... | 删除=%d条",
+                        uid[:8], removed,
+                    )
+        except Exception:
+            logger.error("[AliceMemory] L2 TTL 清理异常", exc_info=True)
+
+    # ==================================================================
     # 04:00 — Path A 周压缩
     # ==================================================================
 
@@ -211,11 +231,48 @@ class Scheduler:
         try:
             for uid in self._identity_module.get_all_users():
                 try:
+                    # 周摘要重置逻辑（三层保护，不依赖单独的 cron）：
+                    # 第一层：如果今天是周一，先清除旧周摘要。
+                    #         04:00 Path A 已确认稳定运行，在此内嵌重置比
+                    #         依赖 05:00 的独立 cron 更可靠（cron misfire 风险）。
+                    # 第二层：如果 week_start 距今超过 7 天（周一 cron 也 misfire 了），
+                    #         主动清除，保证不会无限累积。
+                    from datetime import datetime, timezone, timedelta
+                    today = datetime.now(timezone.utc)
+                    is_monday = today.weekday() == 0
+
+                    weekly = self._storage.get_weekly_summary(uid)
+                    if weekly and weekly.get("week_start"):
+                        should_reset = False
+                        if is_monday:
+                            should_reset = True
+                            logger.info(
+                                "[AliceMemory] 周一检测 | uid=%s... | 主动清除旧周摘要",
+                                uid[:8],
+                            )
+                        else:
+                            try:
+                                ws = datetime.strptime(
+                                    weekly["week_start"], "%Y-%m-%d"
+                                ).replace(tzinfo=timezone.utc)
+                                age_days = (today - ws).days
+                                if age_days > 7:
+                                    should_reset = True
+                                    logger.warning(
+                                        "[AliceMemory] 周摘要过期 | uid=%s... | week_start=%s | age=%dd | 主动清除",
+                                        uid[:8], weekly["week_start"], age_days,
+                                    )
+                            except (ValueError, TypeError):
+                                pass
+                        if should_reset:
+                            self._storage.clear_weekly_summary(uid)
+
                     summary = await self._compressor.compress_context_summary(uid)
                     if summary:
-                        from datetime import datetime, timezone
-                        week_start = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-                        self._storage.set_weekly_summary(uid, summary, week_start)
+                        week_start = today - timedelta(days=today.weekday())
+                        self._storage.set_weekly_summary(
+                            uid, summary, week_start.strftime("%Y-%m-%d")
+                        )
                 except Exception as e:
                     logger.error("[AliceMemory] Path A 压缩失败 | uid=%s | %s", uid[:8], e)
         except Exception:
@@ -226,13 +283,18 @@ class Scheduler:
     # ==================================================================
 
     async def _reset_weekly(self) -> None:
+        """周一 05:00 冗余重置（主重置逻辑已内嵌到 04:00 Path A 压缩）。
+
+        保留此 cron 作为冗余保护：如果 04:00 的 Path A 压缩因异常未执行，
+        05:00 的独立重置仍可清除周摘要。
+        """
+        logger.warning("[AliceMemory] [DEBUG] 周一重置 cron 触发 | 正在执行...")
         try:
             count = 0
             for uid in self._identity_module.get_all_users():
                 if self._storage.clear_weekly_summary(uid):
                     count += 1
-            if count:
-                logger.info("[AliceMemory] 周一重置 | 清除=%d 个周摘要", count)
+            logger.info("[AliceMemory] 周一重置完成 | 清除=%d 个周摘要", count)
         except Exception:
             logger.error("[AliceMemory] 周一重置异常", exc_info=True)
 
